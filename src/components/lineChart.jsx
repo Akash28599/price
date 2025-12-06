@@ -72,7 +72,7 @@ const CustomTooltip = ({ active, payload, label, currency }) => {
       <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg min-w-[220px]">
         <div className="font-semibold text-gray-800 mb-3 text-sm">{label}</div>
         <div className="text-sm mb-2">
-          <span className="font-medium text-gray-700">Excel:</span>{' '}
+          <span className="font-medium text-gray-700">Excel Price:</span>{' '}
           <span className={`font-bold ${data.excelMissing ? 'text-red-600' : 'text-blue-600'}`}>
             {data.excelMissing 
               ? `Missing (${Number(data.excelInterpolated).toFixed(3)} ${currency}/kg)` 
@@ -80,9 +80,9 @@ const CustomTooltip = ({ active, payload, label, currency }) => {
           </span>
         </div>
         <div className="text-sm">
-          <span className="font-medium text-gray-700">API:</span>{' '}
+          <span className="font-medium text-gray-700">API Price:</span>{' '}
           <span className={`font-bold ${data.apiImputed ? 'text-orange-600' : 'text-green-600'}`}>
-            {Number(data.apiPrice).toFixed(3)} {currency}/kg
+            {Number(data.apiPrice).toFixed(3)} {currency}
           </span>
           {data.apiImputed && <span className="ml-1 text-xs text-orange-500">(prev)</span>}
         </div>
