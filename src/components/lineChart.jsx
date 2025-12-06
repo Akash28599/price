@@ -82,7 +82,7 @@ const CustomTooltip = ({ active, payload, label, currency }) => {
         <div className="text-sm">
           <span className="font-medium text-gray-700">API Price:</span>{' '}
           <span className={`font-bold ${data.apiImputed ? 'text-orange-600' : 'text-green-600'}`}>
-            {Number(data.apiPrice).toFixed(3)} {currency}
+            {Number(data.apiPrice).toFixed(3)} {`${currency}/kg`}
           </span>
           {data.apiImputed && <span className="ml-1 text-xs text-orange-500">(prev)</span>}
         </div>
