@@ -317,20 +317,8 @@ const CommodityPriceChart = () => {
         </LineChart>
       </ResponsiveContainer>
 
-      <div className="mt-8 grid grid-cols-3 gap-6 text-center">
-        <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl">
-          <div className="text-3xl font-bold text-blue-600">{excelWeeklyData.length}</div>
-          <div className="text-sm text-blue-700 font-medium mt-1">Excel Weeks</div>
-        </div>
-        <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl">
-          <div className="text-3xl font-bold text-green-600">{apiWeeklyData.length}</div>
-          <div className="text-sm text-green-700 font-medium mt-1">API Weeks</div>
-        </div>
-        <div className="p-6 bg-gradient-to-br from-red-50 to-red-100 border border-red-200 rounded-xl">
-          <div className="text-3xl font-bold text-red-600">{redPointsFull.length}</div>
-          <div className="text-sm text-red-700 font-medium mt-1">Missing Weeks</div>
-        </div>
-      </div>
+      
+
     </div>
   );
 };
