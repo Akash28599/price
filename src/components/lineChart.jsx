@@ -1,4 +1,4 @@
-// src/components/CommodityPriceChart.jsx - ✅ LOCAL DEVELOPMENT: PROXY FIRST
+// src/components/CommodityPriceChart.jsx - ✅ DIRECT API FIRST, PROXY FALLBACK
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -11,7 +11,7 @@ import {
 
 // Conversion factors
 const WHEAT_BUSHEL_TO_KG = 27.2155;
-const SUGAR_CONTRACT_TO_KG = 112000 * 0.453592; // 112,000 lbs to kg
+const SUGAR_CONTRACT_TO_KG = 112000 * 0.453592;
 const ALUMINIUM_MT_TO_KG = 1000;
 
 // API Symbols
@@ -23,11 +23,20 @@ const SYMBOLS = {
   'palm': 'KO*1'
 };
 
-// ✅ LOCAL DEV: PROXY FIRST, then direct (Vercel fallback)
+// ✅ DIRECT API FIRST, then PROXY FALLBACK
 const fetchFuturesData = async (symbol, start, end) => {
   const apiUrl = `https://ds01.ddfplus.com/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=monthly&start=${start}&end=${end}`;
   
-  // ✅ LOCAL: Try PROXIES FIRST
+  // ✅ 1. TRY DIRECT API FIRST (works on Vercel)
+  try {
+    const response = await fetch(apiUrl);
+    if (response.ok) {
+      const csvText = await response.text();
+      return parseCSVData(csvText);
+    }
+  } catch {}
+
+  // ✅ 2. FALLBACK TO PROXIES (local dev)
   const PROXIES = [
     'https://api.allorigins.win/get?url=',
     'https://corsproxy.io/?',
@@ -47,16 +56,7 @@ const fetchFuturesData = async (symbol, start, end) => {
       return parseCSVData(await response.text());
     } catch {}
   }
-
-  // ✅ Vercel: Try direct API (server-side bypasses CORS)
-  try {
-    const response = await fetch(apiUrl);
-    if (response.ok) {
-      const csvText = await response.text();
-      return parseCSVData(csvText);
-    }
-  } catch {}
-
+  
   return [];
 };
 
@@ -112,7 +112,6 @@ const CommodityPriceChart = () => {
   const [loading, setLoading] = useState(true);
   const [apiStatus, setApiStatus] = useState('Not loaded');
 
-  // Currency configuration
   const getCurrencyConfig = () => {
     const config = {
       wheat: { currency: 'USD', usdToNg: 1 },
@@ -126,7 +125,6 @@ const CommodityPriceChart = () => {
   const currencyConfig = getCurrencyConfig();
   const currentSymbolKey = selectedCommodity === 'wheat' ? `wheat-${selectedWheatType}` : selectedCommodity;
 
-  // Get excel data
   const getExcelData = () => {
     switch(selectedCommodity) {
       case 'wheat': return COMPLETE_WHEAT_DATA;
@@ -139,7 +137,6 @@ const CommodityPriceChart = () => {
 
   const excelData = getExcelData();
 
-  // Format month labels: "Jan 2025"
   const formatMonthLabel = (month) => {
     const date = new Date(month + '-01');
     return date.toLocaleDateString('en-US', { 
@@ -148,7 +145,6 @@ const CommodityPriceChart = () => {
     });
   };
 
-  // Build monthly averages from excel data
   const buildExcelMonthly = (rawData) => {
     const monthly = {};
     
@@ -189,12 +185,11 @@ const CommodityPriceChart = () => {
     setExcelMonthlyData(monthlyData);
   }, [selectedCommodity]);
 
-  // API fetch - PROXY FIRST for local dev
   useEffect(() => {
     const fetchData = async () => {
       if (excelMonthlyData.length === 0) return;
       setLoading(true);
-      setApiStatus('🔄 Fetching via proxy...');
+      setApiStatus('🔄 Direct API → Proxy...');
       
       const start = '20240101';
       const end = '20251231';
@@ -211,16 +206,16 @@ const CommodityPriceChart = () => {
           let kgPrice;
           switch(selectedCommodity) {
             case 'wheat':
-              kgPrice = r.close / WHEAT_BUSHEL_TO_KG; // USD/kg
+              kgPrice = r.close / WHEAT_BUSHEL_TO_KG;
               break;
             case 'aluminum':
-              kgPrice = (r.close / ALUMINIUM_MT_TO_KG) * currencyConfig.usdToNg; // NGN/kg
+              kgPrice = (r.close / ALUMINIUM_MT_TO_KG) * currencyConfig.usdToNg;
               break;
             case 'sugar':
-              kgPrice = (r.close / SUGAR_CONTRACT_TO_KG) * currencyConfig.usdToNg; // NGN/kg
+              kgPrice = (r.close / SUGAR_CONTRACT_TO_KG) * currencyConfig.usdToNg;
               break;
             case 'palm':
-              kgPrice = (r.close / 1000) * 2.66; // GHS/kg
+              kgPrice = (r.close / 1000) * 2.66;
               break;
             default:
               kgPrice = r.close;
@@ -236,16 +231,15 @@ const CommodityPriceChart = () => {
           .sort((a, b) => new Date(a.month) - new Date(b.month));
 
         setApiMonthlyData(apiData);
-        setApiStatus(`✅ ${rawData.length} monthly rows (${symbol}) via proxy`);
+        setApiStatus(`✅ ${rawData.length} rows (${symbol})`);
       } else {
-        setApiStatus('❌ Proxy failed');
+        setApiStatus('❌ Direct+Proxy failed');
       }
       setLoading(false);
     };
     fetchData();
   }, [excelMonthlyData, selectedCommodity, selectedWheatType, currencyConfig]);
 
-  // CHART DATA: ONLY EXCEL MONTHS
   const chartData = useMemo(() => {
     const excelMonths = new Set(excelMonthlyData.map(d => d.month));
     const apiMap = new Map(apiMonthlyData.map(d => [d.month, d.apiPrice]));
