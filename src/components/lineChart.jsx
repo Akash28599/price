@@ -1,29 +1,33 @@
-// src/components/CommodityPriceChart.jsx - ✅ INLINE PROXY (NO SEPARATE FILE)
+// src/components/CommodityPriceChart.jsx - ✅ LOCAL DEVELOPMENT: PROXY FIRST
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceDot
 } from 'recharts';
-import { COMPLETE_WHEAT_DATA, COMPLETE_PALM_OIL_DATA } from './wheat';
+import { 
+  COMPLETE_WHEAT_DATA, COMPLETE_PALM_OIL_DATA, 
+  ALUMINIUM_MONTH_COST, SUGAR_MONTH_COST 
+} from './wheat';
 
-const DAY = 24 * 60 * 60 * 1000;
-const START_OF_YEAR = new Date('2025-01-01T00:00:00Z');
+// Conversion factors
 const WHEAT_BUSHEL_TO_KG = 27.2155;
+const SUGAR_CONTRACT_TO_KG = 112000 * 0.453592; // 112,000 lbs to kg
+const ALUMINIUM_MT_TO_KG = 1000;
 
-// ✅ INLINE PROXY - Direct fetch from component
+// API Symbols
+const SYMBOLS = {
+  'wheat-zw': 'ZW*1',
+  'wheat-ml': 'ML*1',
+  'aluminum': 'AL*1',
+  'sugar': 'SB*1',
+  'palm': 'KO*1'
+};
+
+// ✅ LOCAL DEV: PROXY FIRST, then direct (Vercel fallback)
 const fetchFuturesData = async (symbol, start, end) => {
-  const apiUrl = `https://ds01.ddfplus.com/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=dailynearest&start=${start}&end=${end}`;
+  const apiUrl = `https://ds01.ddfplus.com/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=monthly&start=${start}&end=${end}`;
   
-  // Try direct first (Vercel server-side works)
-  try {
-    const response = await fetch(apiUrl);
-    if (response.ok) {
-      const csvText = await response.text();
-      return parseCSVData(csvText);
-    }
-  } catch {}
-
-  // Fallback proxies
+  // ✅ LOCAL: Try PROXIES FIRST
   const PROXIES = [
     'https://api.allorigins.win/get?url=',
     'https://corsproxy.io/?',
@@ -43,7 +47,16 @@ const fetchFuturesData = async (symbol, start, end) => {
       return parseCSVData(await response.text());
     } catch {}
   }
-  
+
+  // ✅ Vercel: Try direct API (server-side bypasses CORS)
+  try {
+    const response = await fetch(apiUrl);
+    if (response.ok) {
+      const csvText = await response.text();
+      return parseCSVData(csvText);
+    }
+  } catch {}
+
   return [];
 };
 
@@ -64,7 +77,6 @@ const parseCSVData = (csvText) => {
   return data;
 };
 
-// ✅ Custom Tooltip (unchanged)
 const CustomTooltip = ({ active, payload, label, currency }) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
@@ -72,17 +84,17 @@ const CustomTooltip = ({ active, payload, label, currency }) => {
       <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg min-w-[220px]">
         <div className="font-semibold text-gray-800 mb-3 text-sm">{label}</div>
         <div className="text-sm mb-2">
-          <span className="font-medium text-gray-700">Excel Price:</span>{' '}
+          <span className="font-medium text-blue-700">📊 Buy Price (Excel):</span>{' '}
           <span className={`font-bold ${data.excelMissing ? 'text-red-600' : 'text-blue-600'}`}>
             {data.excelMissing 
-              ? `Missing (${Number(data.excelInterpolated).toFixed(3)} ${currency}/kg)` 
-              : `${Number(data.excelPrice).toFixed(3)} ${currency}/kg`}
+              ? `Missing (${Number(data.excelInterpolated).toFixed(2)} ${currency}/kg)` 
+              : `${Number(data.excelPrice).toFixed(2)} ${currency}/kg`}
           </span>
         </div>
         <div className="text-sm">
-          <span className="font-medium text-gray-700">API Price:</span>{' '}
+          <span className="font-medium text-green-700">📈 Market Price (API):</span>{' '}
           <span className={`font-bold ${data.apiImputed ? 'text-orange-600' : 'text-green-600'}`}>
-            {Number(data.apiPrice).toFixed(3)} {`${currency}/kg`}
+            {Number(data.apiPrice).toFixed(2)} {`${currency}/kg`}
           </span>
           {data.apiImputed && <span className="ml-1 text-xs text-orange-500">(prev)</span>}
         </div>
@@ -94,167 +106,186 @@ const CustomTooltip = ({ active, payload, label, currency }) => {
 
 const CommodityPriceChart = () => {
   const [selectedCommodity, setSelectedCommodity] = useState('wheat');
-  const [excelWeeklyData, setExcelWeeklyData] = useState([]);
-  const [apiWeeklyData, setApiWeeklyData] = useState([]);
+  const [selectedWheatType, setSelectedWheatType] = useState('zw');
+  const [excelMonthlyData, setExcelMonthlyData] = useState([]);
+  const [apiMonthlyData, setApiMonthlyData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [apiStatus, setApiStatus] = useState('Not loaded');
-  const [ghsToUsdRate, setGhsToUsdRate] = useState(0.08);
-  const [myrToGhs, setMyrToGhs] = useState(2.66);
 
-  const excelData = selectedCommodity === 'wheat' ? COMPLETE_WHEAT_DATA : COMPLETE_PALM_OIL_DATA;
-  const currency = selectedCommodity === 'wheat' ? 'USD' : 'GHS';
-
-  // ---------- helpers (unchanged) ----------
-  const getDateRange = (data) => {
-    const dates = data.map(d => new Date(d.poDate + 'T00:00:00Z')).filter(d => !isNaN(d.getTime()));
-    if (!dates.length) return { start: '20250101', end: '20251231' };
-    const minDate = new Date(Math.min(...dates));
-    const maxDate = new Date(Math.max(...dates));
-    return {
-      start: minDate.toISOString().slice(0, 10).replace(/-/g, ''),
-      end: maxDate.toISOString().slice(0, 10).replace(/-/g, '')
+  // Currency configuration
+  const getCurrencyConfig = () => {
+    const config = {
+      wheat: { currency: 'USD', usdToNg: 1 },
+      palm: { currency: 'GHS', usdToNg: 1 },
+      aluminum: { currency: 'NGN', usdToNg: 1650 },
+      sugar: { currency: 'NGN', usdToNg: 1650 }
     };
+    return config[selectedCommodity] || config.wheat;
   };
 
-  // ---------- FX rates (unchanged) ----------
-  useEffect(() => {
-    const fetchFxRates = async () => {
-      try {
-        const respGHSUSD = await fetch('https://api.exchangerate.host/latest?base=GHS&symbols=USD');
-        const dataGHSUSD = await respGHSUSD.json();
-        setGhsToUsdRate(dataGHSUSD.rates?.USD ?? 0.08);
+  const currencyConfig = getCurrencyConfig();
+  const currentSymbolKey = selectedCommodity === 'wheat' ? `wheat-${selectedWheatType}` : selectedCommodity;
 
-        const respMYRGHS = await fetch('https://api.exchangerate.host/latest?base=MYR&symbols=GHS');
-        const dataMYRGHS = await respMYRGHS.json();
-        setMyrToGhs(dataMYRGHS.rates?.GHS ?? 2.66);
-      } catch {
-        setGhsToUsdRate(0.08);
-        setMyrToGhs(2.66);
-      }
-    };
-    fetchFxRates();
-  }, []);
+  // Get excel data
+  const getExcelData = () => {
+    switch(selectedCommodity) {
+      case 'wheat': return COMPLETE_WHEAT_DATA;
+      case 'aluminum': return ALUMINIUM_MONTH_COST;
+      case 'sugar': return SUGAR_MONTH_COST;
+      case 'palm': return COMPLETE_PALM_OIL_DATA;
+      default: return [];
+    }
+  };
 
-  // ---------- Excel weekly (unchanged) ----------
-  const buildExcelWeekly = (rawData, rate) => {
-    const weekly = {};
+  const excelData = getExcelData();
+
+  // Format month labels: "Jan 2025"
+  const formatMonthLabel = (month) => {
+    const date = new Date(month + '-01');
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      year: 'numeric' 
+    });
+  };
+
+  // Build monthly averages from excel data
+  const buildExcelMonthly = (rawData) => {
+    const monthly = {};
+    
     rawData.forEach(entry => {
-      const date = new Date(entry.poDate + 'T00:00:00Z');
-      if (isNaN(date.getTime())) return;
-      const weekNum = Math.floor((date - START_OF_YEAR) / (7 * DAY)) + 1;
-      const key = `Week ${Math.max(1, weekNum)}`;
-      if (!weekly[key]) weekly[key] = { rates: [], count: 0 };
-      const usdRate = entry.currency === 'GHS' ? entry.rate * rate : entry.rate;
-      weekly[key].rates.push(usdRate);
-      weekly[key].count += 1;
+      let monthKey;
+      if (entry.poDate) {
+        const date = new Date(entry.poDate + 'T00:00:00Z');
+        if (!isNaN(date.getTime())) {
+          monthKey = date.toISOString().slice(0, 7);
+        }
+      } else if (entry.month) {
+        const [monthPart, yearPart] = entry.month.split('-');
+        monthKey = `20${yearPart.padStart(2, '0')}-${monthPart.padStart(2, '0')}`;
+      }
+      
+      if (!monthKey) return;
+      
+      if (!monthly[monthKey]) monthly[monthKey] = { rates: [], count: 0 };
+      const price = entry.rate || entry.cost || 0;
+      if (price > 0 && !isNaN(price)) {
+        monthly[monthKey].rates.push(price);
+        monthly[monthKey].count += 1;
+      }
     });
 
-    return Object.entries(weekly)
-      .map(([week, { rates, count }]) => ({
-        week,
-        excelPrice: parseFloat((rates.reduce((a,b)=>a+b,0) / rates.length).toFixed(3)),
+    return Object.entries(monthly)
+      .filter(([, data]) => data.rates.length > 0)
+      .map(([month, { rates, count }]) => ({
+        month,
+        excelPrice: parseFloat((rates.reduce((a,b)=>a+b,0) / rates.length).toFixed(2)),
         count
       }))
-      .sort((a,b) => parseInt(a.week.replace('Week ', ''), 10) - parseInt(b.week.replace('Week ', ''), 10));
+      .sort((a,b) => new Date(a.month) - new Date(b.month));
   };
 
   useEffect(() => {
-    if (ghsToUsdRate > 0) {
-      const weeklyData = buildExcelWeekly(excelData, ghsToUsdRate);
-      setExcelWeeklyData(weeklyData);
-    }
-  }, [selectedCommodity, ghsToUsdRate, excelData]);
+    const monthlyData = buildExcelMonthly(excelData);
+    setExcelMonthlyData(monthlyData);
+  }, [selectedCommodity]);
 
-  // ---------- ✅ INLINE PROXY FETCH ----------
+  // API fetch - PROXY FIRST for local dev
   useEffect(() => {
     const fetchData = async () => {
-      if (excelWeeklyData.length === 0) return;
+      if (excelMonthlyData.length === 0) return;
       setLoading(true);
-      setApiStatus('🔄 Fetching...');
+      setApiStatus('🔄 Fetching via proxy...');
       
-      const { start, end } = getDateRange(excelData);
-      const symbol = selectedCommodity === 'wheat' ? 'ZW*1' : 'KO*1';
+      const start = '20240101';
+      const end = '20251231';
       
+      const symbol = SYMBOLS[currentSymbolKey];
       const rawData = await fetchFuturesData(symbol, start, end);
       
       if (rawData.length > 0) {
         const grouped = {};
         rawData.forEach(r => {
-          const date = new Date(r.date + 'T00:00:00Z');
-          if (isNaN(date.getTime())) return;
-          const weekNum = Math.floor((date - START_OF_YEAR) / (7 * DAY)) + 1;
-          const key = `Week ${Math.max(1, weekNum)}`;
-          if (!grouped[key]) grouped[key] = [];
+          const monthKey = r.date.slice(0, 7);
+          if (!grouped[monthKey]) grouped[monthKey] = [];
           
           let kgPrice;
-          if (selectedCommodity === 'wheat') {
-            kgPrice = r.close / WHEAT_BUSHEL_TO_KG;
-          } else {
-            kgPrice = (r.close / 1000) * myrToGhs;
+          switch(selectedCommodity) {
+            case 'wheat':
+              kgPrice = r.close / WHEAT_BUSHEL_TO_KG; // USD/kg
+              break;
+            case 'aluminum':
+              kgPrice = (r.close / ALUMINIUM_MT_TO_KG) * currencyConfig.usdToNg; // NGN/kg
+              break;
+            case 'sugar':
+              kgPrice = (r.close / SUGAR_CONTRACT_TO_KG) * currencyConfig.usdToNg; // NGN/kg
+              break;
+            case 'palm':
+              kgPrice = (r.close / 1000) * 2.66; // GHS/kg
+              break;
+            default:
+              kgPrice = r.close;
           }
-          grouped[key].push(kgPrice);
+          grouped[monthKey].push(kgPrice);
         });
 
         const apiData = Object.entries(grouped)
-          .map(([week, prices]) => ({
-            week,
-            apiPrice: parseFloat((prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(3))
+          .map(([month, prices]) => ({
+            month,
+            apiPrice: parseFloat((prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2))
           }))
-          .sort((a, b) => parseInt(a.week.replace('Week ', ''), 10) - parseInt(b.week.replace('Week ', ''), 10));
+          .sort((a, b) => new Date(a.month) - new Date(b.month));
 
-        setApiWeeklyData(apiData);
-        setApiStatus(`✅ ${rawData.length} rows (${symbol})`);
+        setApiMonthlyData(apiData);
+        setApiStatus(`✅ ${rawData.length} monthly rows (${symbol}) via proxy`);
       } else {
-        setApiStatus('❌ API failed');
+        setApiStatus('❌ Proxy failed');
       }
       setLoading(false);
     };
     fetchData();
-  }, [excelWeeklyData, selectedCommodity, excelData, myrToGhs]);
+  }, [excelMonthlyData, selectedCommodity, selectedWheatType, currencyConfig]);
 
-  // ---------- Chart data + rest unchanged ----------
+  // CHART DATA: ONLY EXCEL MONTHS
   const chartData = useMemo(() => {
-    const excelMap = new Map(excelWeeklyData.map(d => [parseInt(d.week.replace('Week ', ''), 10), { price: d.excelPrice, count: d.count }]));
-    const apiMap = new Map(apiWeeklyData.map(d => [parseInt(d.week.replace('Week ', ''), 10), d.apiPrice]));
+    const excelMonths = new Set(excelMonthlyData.map(d => d.month));
+    const apiMap = new Map(apiMonthlyData.map(d => [d.month, d.apiPrice]));
+    const sortedExcelMonths = Array.from(excelMonths).sort();
 
-    const allWeekNums = new Set([...excelMap.keys(), ...apiMap.keys()]);
-    const sortedWeekNums = Array.from(allWeekNums).sort((a,b)=>a-b);
-    if (!sortedWeekNums.length) return [];
+    if (!sortedExcelMonths.length) return [];
 
-    const minWeek = Math.min(...sortedWeekNums);
-    const maxWeek = Math.max(...sortedWeekNums);
+    const excelMap = new Map(excelMonthlyData.map(d => [d.month, { price: d.excelPrice, count: d.count }]));
 
-    const findPrevExcel = (wk) => {
-      for (let i = wk - 1; i >= minWeek; i--) {
-        if (excelMap.has(i) && excelMap.get(i).price != null) {
-          return { weekNum: i, price: excelMap.get(i).price };
+    const findPrevExcel = (month) => {
+      const monthDate = new Date(month + '-01');
+      for (let i = 1; i < 12; i++) {
+        const prevMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() - i, 1);
+        const prevKey = prevMonth.toISOString().slice(0, 7);
+        if (excelMap.has(prevKey)) {
+          return { month: prevKey, price: excelMap.get(prevKey).price };
         }
       }
       return null;
     };
 
     let lastApiPrice = null;
-    const rows = [];
-    for (let wk = minWeek; wk <= maxWeek; wk++) {
-      const weekKey = `Week ${wk}`;
-      const excelEntry = excelMap.has(wk) ? excelMap.get(wk) : null;
+    return sortedExcelMonths.map(month => {
+      const excelEntry = excelMap.get(month);
       const excelPrice = excelEntry ? excelEntry.price : null;
       const excelCount = excelEntry ? excelEntry.count : 0;
 
       let excelInterpolated = excelPrice;
       if (excelPrice == null) {
-        const prev = findPrevExcel(wk);
+        const prev = findPrevExcel(month);
         excelInterpolated = prev ? prev.price : null;
       }
 
-      const apiEntry = apiMap.has(wk) ? apiMap.get(wk) : null;
+      const apiEntry = apiMap.get(month);
       let apiPrice = apiEntry != null ? apiEntry : lastApiPrice;
       const apiImputed = apiEntry == null && apiPrice != null;
       if (apiEntry != null) lastApiPrice = apiEntry;
 
-      rows.push({
-        week: weekKey,
-        weekNum: wk,
+      return {
+        month,
         excelPrice,
         excelInterpolated,
         excelCount,
@@ -262,63 +293,131 @@ const CommodityPriceChart = () => {
         apiPrice,
         apiImputed,
         apiHasRealValue: apiEntry != null
-      });
-    }
-    return rows;
-  }, [excelWeeklyData, apiWeeklyData]);
+      };
+    });
+  }, [excelMonthlyData, apiMonthlyData]);
 
-  const redPointsFull = chartData.filter(d => d.excelMissing && d.excelInterpolated != null).map(d => ({
-    week: d.week, y: d.excelInterpolated, excelCount: d.excelCount
-  }));
+  const redPoints = chartData.filter(d => d.excelMissing && d.excelInterpolated != null);
+  const orangePoints = chartData.filter(d => d.apiImputed && d.apiPrice != null);
 
-  const orangePointsFull = chartData.filter(d => d.apiImputed && d.apiPrice != null).map(d => ({
-    week: d.week, y: d.apiPrice
-  }));
-
-  const ExcelDot = (props) => {
-    const { cx, cy, payload } = props;
-    if (!payload || payload.excelPrice == null) return null;
-    return <rcle cx={cx} cy={cy} r={4} fill="#3B82F6" stroke="#fff" strokeWidth={1} />;
+  const getTitle = () => {
+    const titles = {
+      wheat: '🌾 Wheat Flour',
+      aluminum: '⚙️ Aluminum', 
+      sugar: '🍬 Sugar',
+      palm: '🌴 Palm Oil'
+    };
+    return `${titles[selectedCommodity] || selectedCommodity} (${currencyConfig.currency}/kg)`;
   };
-
-  const yAxisLabel = `${currency}/kg`;
-  const chartHeader = selectedCommodity === 'palm' ? '🌴 Palm Oil (GHS/kg)' : '🌾 Wheat Flour (USD/kg)';
 
   return (
     <div className="p-6 max-w-7xl mx-auto bg-white rounded-xl shadow-lg">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">{chartHeader}</h1>
+          <h1 className="text-3xl font-bold text-gray-800">{getTitle()}</h1>
           <div className="text-sm text-gray-600 mt-1">
-            {selectedCommodity === 'palm' ? `💱 1 MYR=${myrToGhs.toFixed(4)} GHS` : `💱 1 GHS=${ghsToUsdRate.toFixed(4)} USD`} | 📅 {getDateRange(excelData).start}-{getDateRange(excelData).end} | {apiStatus}
+            📅 {excelMonthlyData[0]?.month || 'No data'} - {excelMonthlyData[excelMonthlyData.length-1]?.month || 'No data'} | {apiStatus}
           </div>
         </div>
-        <select className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" value={selectedCommodity} onChange={e => setSelectedCommodity(e.target.value)}>
-          <option value="wheat">🌾 Wheat Flour (ZW*1)</option>
-          <option value="palm">🌴 Palm Oil (KO*1)</option>
-        </select>
+        
+        <div className="flex items-center gap-4">
+          <select 
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            value={selectedCommodity} 
+            onChange={e => {
+              setSelectedCommodity(e.target.value);
+              if (e.target.value !== 'wheat') setSelectedWheatType('zw');
+            }}
+          >
+            <option value="wheat">🌾 Wheat (USD/kg)</option>
+            <option value="palm">🌴 Palm Oil (GHS/kg)</option>
+            <option value="aluminum">⚙️ Aluminum (NGN/kg)</option>
+            <option value="sugar">🍬 Sugar (NGN/kg)</option>
+          </select>
+          
+          {selectedCommodity === 'wheat' && (
+            <select 
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              value={selectedWheatType}
+              onChange={e => setSelectedWheatType(e.target.value)}
+            >
+              <option value="zw">ZW Wheat</option>
+              <option value="ml">ML Wheat</option>
+            </select>
+          )}
+        </div>
       </div>
 
       <ResponsiveContainer width="100%" height={520}>
         <LineChart data={chartData} margin={{ top: 20, right: 40, left: 20, bottom: 90 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="week" angle={-45} height={100} tick={{ fontSize: 11 }} interval={Math.floor(chartData.length / 12) || 0} />
-          <YAxis domain={[0, 'auto']} label={{ value: yAxisLabel, angle: -90, position: 'insideLeft' }} />
-          <Tooltip content={<CustomTooltip currency={currency} />} cursor={{ strokeDasharray: '3 3' }} />
+          <XAxis 
+            dataKey="month" 
+            angle={-45} 
+            height={100} 
+            tick={{ fontSize: 11 }} 
+            interval={Math.floor(chartData.length / 8) || 0}
+            tickFormatter={formatMonthLabel}
+          />
+          <YAxis 
+            label={{ 
+              value: `${currencyConfig.currency}/kg`, 
+              angle: -90, 
+              position: 'insideLeft'
+            }} 
+          />
+          <Tooltip 
+            content={<CustomTooltip currency={currencyConfig.currency} />} 
+            cursor={{ strokeDasharray: '3 3' }}
+            labelFormatter={formatMonthLabel}
+          />
           <Legend />
-          <Line type="monotone" dataKey="excelInterpolated" stroke="#3B82F6" strokeWidth={3} name="Excel Price" connectNulls={true} dot={ExcelDot} isAnimationActive={false} />
-          <Line type="monotone" dataKey="apiPrice" stroke="#10B981" strokeWidth={3} name="API Price" connectNulls={true} dot={false} isAnimationActive={false} />
-          {redPointsFull.map((p, i) => (
-            <ReferenceDot key={`red-${i}`} x={p.week} y={p.y} r={6} fill="#EF4444" stroke="#fff" strokeWidth={2} isFront={true} />
+          
+          <Line 
+            type="monotone" 
+            dataKey="excelInterpolated" 
+            stroke="#3B82F6" 
+            strokeWidth={3} 
+            name="🛒 Buy Price (Excel)" 
+            connectNulls={true}
+            isAnimationActive={false} 
+          />
+          <Line 
+            type="monotone" 
+            dataKey="apiPrice" 
+            stroke="#10B981" 
+            strokeWidth={3} 
+            name={`📈 Market Price (${SYMBOLS[currentSymbolKey]})`} 
+            connectNulls={true}
+            isAnimationActive={false} 
+          />
+          
+          {redPoints.map((p, i) => (
+            <ReferenceDot 
+              key={`red-${i}`} 
+              x={p.month} 
+              y={p.excelInterpolated} 
+              r={6} 
+              fill="#EF4444" 
+              stroke="#fff" 
+              strokeWidth={2} 
+              isFront={true} 
+            />
           ))}
-          {orangePointsFull.map((p, i) => (
-            <ReferenceDot key={`orange-${i}`} x={p.week} y={p.y} r={6} fill="#F97316" stroke="#fff" strokeWidth={2} isFront={true} />
+          {orangePoints.map((p, i) => (
+            <ReferenceDot 
+              key={`orange-${i}`} 
+              x={p.month} 
+              y={p.apiPrice} 
+              r={6} 
+              fill="#F97316" 
+              stroke="#fff" 
+              strokeWidth={2} 
+              isFront={true} 
+            />
           ))}
         </LineChart>
       </ResponsiveContainer>
-
-      
-
     </div>
   );
 };
