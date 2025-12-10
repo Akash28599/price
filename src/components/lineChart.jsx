@@ -8,12 +8,11 @@ import {
   SUGAR_MONTH_COST
 } from './wheat';
 
-// ✅ FIXED FX RATES + BASIS ADJUSTMENTS
+// FX + constants
 const FX = {
   GHS_to_USD: 0.087,
   USD_to_GHS: 11.44,
-  USD_to_NGN: 1650,  // ✅ UPDATED from 1451.6 (Dec 2025 rate)
-  EUR_to_USD: 1.1637,
+  USD_to_NGN: 1650,
   MYR_to_USD: 0.2430
 };
 const MYR_to_GHS = FX.MYR_to_USD * FX.USD_to_GHS;
@@ -22,25 +21,34 @@ const BUSHEL_TO_KG_WHEAT = 27.2155;
 const TONNE_TO_KG = 1000;
 const LB_TO_KG = 0.45359237;
 
-// ✅ FIXED FALLBACK DATA with realistic 2025 values
+// Monthly futures averages (raw quotes)
 const RAW_FALLBACK_DATA = {
   'wheat-zw': [
-    { month: '2025-01', raw: 617 }, { month: '2025-02', raw: 604 },
-    { month: '2025-03', raw: 589 }, { month: '2025-04', raw: 568 },
-    { month: '2025-05', raw: 571 }, { month: '2025-06', raw: 560 },
-    { month: '2025-07', raw: 543 }, { month: '2025-08', raw: 534 },
-    { month: '2025-09', raw: 508 }, { month: '2025-10', raw: 534 },
-    { month: '2025-11', raw: 531 }
+    { month: '2025-01', raw: 600.2 },
+    { month: '2025-02', raw: 640.3 },
+    { month: '2025-03', raw: 609.1 },
+    { month: '2025-04', raw: 587.2 },
+    { month: '2025-05', raw: 569.2 },
+    { month: '2025-06', raw: 578.4 },
+    { month: '2025-07', raw: 564.4 },
+    { month: '2025-08', raw: 529.6 },
+    { month: '2025-09', raw: 522.2 },
+    { month: '2025-10', raw: 512.0 },
+    { month: '2025-11', raw: 534.8 }
   ],
   palm: [
-    { month: '2025-01', raw: 4100 }, { month: '2025-02', raw: 4310 },
-    { month: '2025-03', raw: 4196 }, { month: '2025-04', raw: 3920 },
-    { month: '2025-05', raw: 3888 }, { month: '2025-06', raw: 4009 },
-    { month: '2025-07', raw: 4260 }, { month: '2025-08', raw: 4408 },
-    { month: '2025-09', raw: 4352 }, { month: '2025-10', raw: 4193 },
-    { month: '2025-11', raw: 4077 }
+    { month: '2025-01', raw: 4094 },
+    { month: '2025-02', raw: 4250 },
+    { month: '2025-03', raw: 4177 },
+    { month: '2025-04', raw: 4010 },
+    { month: '2025-05', raw: 3875 },
+    { month: '2025-06', raw: 3998 },
+    { month: '2025-07', raw: 4140 },
+    { month: '2025-08', raw: 4455 },
+    { month: '2025-09', raw: 4440 },
+    { month: '2025-10', raw: 4440 },
+    { month: '2025-11', raw: 4085 }
   ],
-  // ✅ FIXED Sugar SB – realistic 2025 cents/lb (closer to Excel)
   sugar: [
     { month: '2024-10', raw: 19.82 }, { month: '2024-11', raw: 19.06 },
     { month: '2024-12', raw: 17.70 }, { month: '2025-01', raw: 18.02 },
@@ -48,16 +56,17 @@ const RAW_FALLBACK_DATA = {
     { month: '2025-04', raw: 17.82 }, { month: '2025-05', raw: 17.69 },
     { month: '2025-06', raw: 16.94 }, { month: '2025-07', raw: 16.97 },
     { month: '2025-08', raw: 17.01 }, { month: '2025-09', raw: 16.60 },
-    { month: '2025-10', raw: 16.20 }, // ✅ Adjusted closer to reality
-    { month: '2025-11', raw: 16.80 },  // ✅ Adjusted
-    { month: '2025-12', raw: 16.50 }   // ✅ Adjusted
+    { month: '2025-10', raw: 16.20 },
+    { month: '2025-11', raw: 16.80 },
+    { month: '2025-12', raw: 16.50 }
   ]
 };
 
-// ✅ FIXED: Added basis adjustments
+// Quality / location basis
 const BASIS_ADJUSTMENTS = {
-  palm: 0.95,  // 5% discount for Ghana physicals vs Malaysia futures
-  sugar: 1.12  // 12% premium for Nigeria imports
+  wheat: 1.30, 
+  palm:  1.20, 
+  sugar: 1.30  
 };
 
 function normalizeMonth(value) {
@@ -79,6 +88,12 @@ function normalizeMonth(value) {
   const ymd = value.match(/^(\d{4})-(\d{2})-\d{2}$/);
   if (ymd) return `${ymd[1]}-${ymd[2]}`;
 
+  const mdRegex = value.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (mdRegex) {
+    const [, month, , year] = mdRegex;
+    return `${year}-${String(month).padStart(2,'0')}`;
+  }
+
   const d = new Date(value);
   if (!isNaN(d)) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}`;
@@ -90,30 +105,26 @@ function convertApiValue(commodity, wheatType, rawValue) {
   if (rawValue == null || isNaN(Number(rawValue))) return null;
   const rv = Number(rawValue);
 
-  // Wheat ZW: cents/bushel → USD/bushel → USD/kg
+  // ZW: cents/bushel → USD/kg, then apply basis
   if (commodity === 'wheat' && wheatType === 'zw') {
     const usdPerBushel = rv / 100;
-    return usdPerBushel / BUSHEL_TO_KG_WHEAT;
+    const usdPerKgRaw = usdPerBushel / BUSHEL_TO_KG_WHEAT;
+    return usdPerKgRaw * BASIS_ADJUSTMENTS.wheat;
   }
 
-  // Wheat ML (if used): EUR/tonne → USD/kg
-  if (commodity === 'wheat') {
-    return (rv / TONNE_TO_KG) * FX.EUR_to_USD;
-  }
-
-  // Palm KO: MYR/tonne → MYR/kg → GHS/kg ✅ FIXED with basis
+  // Palm: MYR/tonne → GHS/kg, then basis
   if (commodity === 'palm') {
     const myrPerKg = rv / TONNE_TO_KG;
     const ghsPerKg = myrPerKg * MYR_to_GHS;
-    return ghsPerKg * BASIS_ADJUSTMENTS.palm; // ✅ 5% basis adjustment
+    return ghsPerKg * BASIS_ADJUSTMENTS.palm;
   }
 
-  // Sugar SB: cents/lb → USD/lb → USD/kg → NGN/kg ✅ FIXED
+  // Sugar: cents/lb → USD/kg → NGN/kg, then basis
   if (commodity === 'sugar') {
     const usdPerLb = rv / 100;
     const usdPerKg = usdPerLb / LB_TO_KG;
     const ngnPerKg = usdPerKg * FX.USD_to_NGN;
-    return ngnPerKg * BASIS_ADJUSTMENTS.sugar; // ✅ 12% import premium
+    return ngnPerKg * BASIS_ADJUSTMENTS.sugar;
   }
 
   return null;
@@ -129,7 +140,6 @@ function buildExcelMonthly(rawDataArray, commodity) {
     let price = Number(entry.rate ?? entry.cost);
     if (isNaN(price)) return;
 
-    // Wheat GHS → USD
     if (commodity === 'wheat' && entry.currency === 'GHS') {
       price *= FX.GHS_to_USD;
     }
@@ -161,7 +171,7 @@ const unitsByCommodity = {
 };
 
 const CommodityPriceChart = () => {
-  const [selectedCommodity, setSelectedCommodity] = useState('sugar'); // ✅ Default to sugar
+  const [selectedCommodity, setSelectedCommodity] = useState('sugar');
   const [selectedWheatType, setSelectedWheatType] = useState('zw');
   const [precomputed, setPrecomputed] = useState({});
 
@@ -322,7 +332,7 @@ const CommodityPriceChart = () => {
             </span>{' '}
             |{' '}
             <span style={{ color: '#10B981' }}>
-              Green = Market (ZW/KO/SB) ✅ FIXED
+              Green = Market (ZW/KO/SB, +basis)
             </span>
           </div>
         </div>
