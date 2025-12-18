@@ -206,3 +206,23 @@ export const COMPLETE_CRUDE_PALM_OIL_DATA = [
   { poDate: '2025-01-03', rate: 1.30, currency: 'USD' },
   { poDate: '2024-12-11', rate: 1.31, currency: 'USD' }
 ];
+
+export const CAN_DATA = [
+  { month: 'Nov-25', avgPricePerUnit: 139.50, currency: 'NGN' },
+  { month: 'Oct-25', avgPricePerUnit: 141.12, currency: 'NGN' },
+  { month: 'Sep-25', avgPricePerUnit: 144.47, currency: 'NGN' },
+  { month: 'Aug-25', avgPricePerUnit: 148.64, currency: 'NGN' },
+  { month: 'Jul-25', avgPricePerUnit: 144.58, currency: 'NGN' },
+  { month: 'Jun-25', avgPricePerUnit: 144.11, currency: 'NGN' },
+  { month: 'May-25', avgPricePerUnit: 144.49, currency: 'NGN' },
+  { month: 'Apr-25', avgPricePerUnit: 142.57, currency: 'NGN' },
+  { month: 'Mar-25', avgPricePerUnit: 155.64, currency: 'NGN' },
+  { month: 'Feb-25', avgPricePerUnit: 146.72, currency: 'NGN' },
+  { month: 'Jan-25', avgPricePerUnit: 150.73, currency: 'NGN' },
+  { month: 'Dec-24', avgPricePerUnit: 143.66, currency: 'NGN' },
+  { month: 'Oct-24', avgPricePerUnit: 147.05, currency: 'NGN' },
+  { month: 'Sep-24', avgPricePerUnit: 145.37, currency: 'NGN' },
+  { month: 'Aug-24', avgPricePerUnit: 143.34, currency: 'NGN' },
+  { month: 'Jul-24', avgPricePerUnit: 146.57, currency: 'NGN' }
+];
+

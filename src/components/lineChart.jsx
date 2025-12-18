@@ -5,23 +5,10 @@ import {
 } from 'recharts';
 import {
   COMPLETE_WHEAT_DATA, COMPLETE_PALM_OIL_DATA, COMPLETE_CRUDE_PALM_OIL_DATA,
-  SUGAR_MONTH_COST
+  SUGAR_MONTH_COST, CAN_DATA
 } from './wheat';
 
-// FX + constants
-const FX = {
-  GHS_to_USD: 0.087,
-  USD_to_GHS: 11.44,
-  USD_to_NGN: 1650,
-  MYR_to_USD: 0.2430
-};
-const MYR_to_GHS = FX.MYR_to_USD * FX.USD_to_GHS;
-
-const BUSHEL_TO_KG_WHEAT = 27.2155;
-const TONNE_TO_KG = 1000;
-const LB_TO_KG = 0.45359237;
-
-// ✅ FIXED - Consistent 'crude_palm' keys
+// ✅ ALUMINUM RAW API DATA - FIXED to $2400/tonne (supply chain negotiated price)
 const RAW_FALLBACK_DATA = {
   'wheat-zw': [
     { month: '2025-01', raw: 600.2 }, { month: '2025-02', raw: 640.3 },
@@ -42,7 +29,7 @@ const RAW_FALLBACK_DATA = {
   'crude_palm': [  
     { month: '2024-10', raw: 1100 }, { month: '2024-12', raw: 1310 },
     { month: '2025-01', raw: 1295 }, { month: '2025-02', raw: 1260 },
-    { month: '2025-03', raw: 1290 },{month: '2025-10', raw: 1220}
+    { month: '2025-03', raw: 1290 }, { month: '2025-10', raw: 1220 }
   ],
   sugar: [
     { month: '2024-10', raw: 19.82 }, { month: '2024-11', raw: 19.06 },
@@ -53,14 +40,68 @@ const RAW_FALLBACK_DATA = {
     { month: '2025-08', raw: 17.01 }, { month: '2025-09', raw: 16.60 },
     { month: '2025-10', raw: 16.20 }, { month: '2025-11', raw: 16.80 },
     { month: '2025-12', raw: 16.50 }
+  ],
+  // ✅ Supply chain negotiated $2400/tonne for ALL months
+  aluminum: [
+    { month: '2024-07', raw: 2400 },
+    { month: '2024-08', raw: 2400 },
+    { month: '2024-09', raw: 2400 },
+    { month: '2024-10', raw: 2400 },
+    { month: '2024-11', raw: 2400 },
+    { month: '2024-12', raw: 2400 },
+    { month: '2025-01', raw: 2400 },
+    { month: '2025-02', raw: 2400 },
+    { month: '2025-03', raw: 2400 },
+    { month: '2025-04', raw: 2400 },
+    { month: '2025-05', raw: 2400 },
+    { month: '2025-06', raw: 2400 },
+    { month: '2025-07', raw: 2400 },
+    { month: '2025-08', raw: 2400 },
+    { month: '2025-09', raw: 2400 },
+    { month: '2025-10', raw: 2400 },
+    { month: '2025-11', raw: 2400 },
+    { month: '2025-12', raw: 2400 }
   ]
 };
+
+// FX + constants
+const FX = {
+  GHS_to_USD: 0.087,
+  USD_to_GHS: 11.44,
+  USD_to_NGN: 1650,
+  MYR_to_USD: 0.2430
+};
+const MYR_to_GHS = FX.MYR_to_USD * FX.USD_to_GHS;
+
+const BUSHEL_TO_KG_WHEAT = 27.2155;
+const TONNE_TO_KG = 1000;
+const LB_TO_KG = 0.45359237;
+
+// Average aluminum can weight (330ml can)
+const ALUMINUM_CAN_WEIGHT_KG = 0.013; // 13g = 0.013kg
 
 const BASIS_ADJUSTMENTS = {
   wheat: 1.30, 
   palm: 1.20, 
   'crude_palm': 1.15,
-  sugar: 1.30  
+  sugar: 1.30,
+  aluminum: 1.0
+};
+
+const decimalsByCommodity = {
+  wheat: 3,
+  palm: 2,
+  'crude_palm': 3,
+  sugar: 0,
+  aluminum: 2
+};
+
+const unitsByCommodity = {
+  wheat: 'USD/kg',
+  palm: 'GHS/kg',
+  'crude_palm': 'USD/kg',
+  sugar: 'NGN/kg',
+  aluminum: 'NGN/can'  // Back to NGN/can for proper comparison
 };
 
 function normalizeMonth(value) {
@@ -123,6 +164,18 @@ function convertApiValue(commodity, wheatType, rawValue) {
     return ngnPerKg * BASIS_ADJUSTMENTS.sugar;
   }
 
+  // ✅ CORRECTED ALUMINUM CONVERSION: $2400/tonne → NGN/can
+  if (commodity === 'aluminum') {
+    // Step 1: Convert $2400/tonne to NGN/kg
+    const usdPerKg = rv / TONNE_TO_KG;  // 2400 ÷ 1000 = 2.40 USD/kg
+    const ngnPerKg = usdPerKg * FX.USD_to_NGN;  // 2.40 × 1650 = 3960 NGN/kg
+    
+    // Step 2: Convert NGN/kg to NGN/can using can weight
+    const rawAluminumCostPerCan = ngnPerKg * ALUMINUM_CAN_WEIGHT_KG;  // 3960 × 0.013 = 51.48 NGN/can
+    
+    return rawAluminumCostPerCan;
+  }
+
   return null;
 }
 
@@ -133,7 +186,7 @@ function buildExcelMonthly(rawDataArray, commodity) {
     const monthKey = normalizeMonth(entry.poDate || entry.month);
     if (!monthKey) return;
 
-    let price = Number(entry.rate ?? entry.cost);
+    let price = Number(entry.rate ?? entry.cost ?? entry.avgPricePerUnit);
     if (isNaN(price)) return;
 
     if (commodity === 'wheat' && entry.currency === 'GHS') {
@@ -152,37 +205,22 @@ function buildExcelMonthly(rawDataArray, commodity) {
     .sort((a,b) => new Date(a.month + '-01') - new Date(b.month + '-01'));
 }
 
-const decimalsByCommodity = {
-  wheat: 3,
-  palm: 2,
-  'crude_palm': 3,
-  sugar: 0
-};
-
-const unitsByCommodity = {
-  wheat: 'USD/kg',
-  palm: 'GHS/kg',
-  'crude_palm': 'USD/kg',
-  sugar: 'NGN/kg'
-};
-
 const CommodityPriceChart = () => {
   const [selectedCommodity, setSelectedCommodity] = useState('sugar');
   const [selectedWheatType, setSelectedWheatType] = useState('zw');
   const [precomputed, setPrecomputed] = useState({});
 
-  // ✅ FIXED - Memoized precompute
   useEffect(() => {
     const data = {
       wheat: buildExcelMonthly(COMPLETE_WHEAT_DATA, 'wheat'),
       palm: buildExcelMonthly(COMPLETE_PALM_OIL_DATA, 'palm'),
       'crude_palm': buildExcelMonthly(COMPLETE_CRUDE_PALM_OIL_DATA, 'crude_palm'),
-      sugar: buildExcelMonthly(SUGAR_MONTH_COST.map(e => ({ month: e.month, cost: e.cost })), 'sugar')
+      sugar: buildExcelMonthly(SUGAR_MONTH_COST.map(e => ({ month: e.month, cost: e.cost })), 'sugar'),
+      aluminum: buildExcelMonthly(CAN_DATA, 'aluminum')
     };
     setPrecomputed(data);
   }, []);
 
-  // ✅ FIXED - Memoized excelData & rawApiList
   const excelData = useMemo(() => precomputed[selectedCommodity] || [], [precomputed, selectedCommodity]);
   
   const apiKey = selectedCommodity === 'wheat' ? `wheat-${selectedWheatType}` : selectedCommodity;
@@ -208,10 +246,25 @@ const CommodityPriceChart = () => {
         excelPrice: d.excelPrice,
         marketPrice,
         rawApi: raw,
-        diff
+        diff,
+        priceRatio: marketPrice != null ? (d.excelPrice / marketPrice).toFixed(2) : null
       };
     });
   }, [excelData, rawMap, selectedCommodity, selectedWheatType]);
+
+  // Calculate averages for aluminum comparison
+  const aluminumStats = useMemo(() => {
+    if (selectedCommodity !== 'aluminum') return null;
+    
+    const validData = chartData.filter(d => d.excelPrice != null && d.marketPrice != null);
+    if (validData.length === 0) return null;
+    
+    const avgExcel = validData.reduce((sum, d) => sum + d.excelPrice, 0) / validData.length;
+    const avgMarket = validData.reduce((sum, d) => sum + d.marketPrice, 0) / validData.length;
+    const avgRatio = avgExcel / avgMarket;
+    
+    return { avgExcel, avgMarket, avgRatio };
+  }, [chartData, selectedCommodity]);
 
   const CustomTooltip = ({ active, payload }) => {
     if (!active || !payload?.[0]) return null;
@@ -226,26 +279,33 @@ const CommodityPriceChart = () => {
           {new Date(d.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ color: '#3B82F6' }}>📊 Excel Buy</span>
+          <span style={{ color: '#3B82F6' }}>📊 Excel Buy (Can Price)</span>
           <span style={{ fontWeight: 'bold' }}>{fmt(d.excelPrice)}</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ color: '#10B981' }}>📈 Market Price</span>
+          <span style={{ color: '#10B981' }}>📈 Raw Aluminum Cost</span>
           <span style={{ fontWeight: 'bold' }}>{fmt(d.marketPrice)}</span>
         </div>
         {d.diff != null && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
-            <span>💰 Spread: </span>
-            <span style={{ color: d.diff > 0 ? '#ef4444' : '#10B981', fontWeight: 'bold' }}>
+            <span>💰 Manufacturing Premium: </span>
+            <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
               {Number(d.diff).toFixed(dec)} {unit}
             </span>
+            {selectedCommodity === 'aluminum' && d.priceRatio && (
+              <div style={{ marginTop: 8, fontSize: '0.9em', color: '#6b7280' }}>
+                Total Cost Multiple: {d.priceRatio}x
+                <div style={{ fontSize: '0.8em', marginTop: 4 }}>
+                  (Includes manufacturing, shipping, packaging, profit)
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
     );
   };
 
-  // ✅ FIXED - Use chartData.length instead of excelData
   if (!chartData.length) {
     return <div style={{ padding: 40, textAlign: 'center' }}>Loading...</div>;
   }
@@ -260,13 +320,19 @@ const CommodityPriceChart = () => {
             {selectedCommodity === 'wheat' ? '🌾 Wheat Flour' :
              selectedCommodity === 'palm' ? '🌴 Palm Oil' :
              selectedCommodity === 'crude_palm' ? '🛢️ Crude Palm Oil' :
-             '🍬 Sugar'}
+             selectedCommodity === 'sugar' ? '🍬 Sugar' :
+             selectedCommodity === 'aluminum' ? '🥫 Aluminum Can Cost Analysis' : ''}
           </h2>
           <div style={{ color: '#6b7280', fontSize: 16 }}>
             {unitLabel} —{' '}
-            <span style={{ color: '#3B82F6' }}>Blue = Excel (buy)</span>{' '}
+            <span style={{ color: '#3B82F6' }}>Blue = Processed Can Purchase Price</span>{' '}
             |{' '}
-            <span style={{ color: '#10B981' }}>Green = Market (+basis)</span>
+            <span style={{ color: '#10B981' }}>Green = Raw Aluminum Material Cost</span>
+            {selectedCommodity === 'aluminum' && aluminumStats && (
+              <span style={{ marginLeft: 12, color: '#8b5cf6', fontWeight: 'bold' }}>
+                Avg Manufacturing Premium: {(aluminumStats.avgRatio - 1).toFixed(2)}x
+              </span>
+            )}
           </div>
         </div>
 
@@ -280,6 +346,7 @@ const CommodityPriceChart = () => {
             <option value="palm">🌴 Palm Oil (GHS/kg)</option>
             <option value="crude_palm">🛢️ Crude Palm Oil (USD/kg)</option>
             <option value="sugar">🍬 Sugar (NGN/kg)</option>
+            <option value="aluminum">🥫 Aluminum Cans (NGN/can)</option>
           </select>
           {selectedCommodity === 'wheat' && (
             <select
@@ -314,7 +381,7 @@ const CommodityPriceChart = () => {
               dataKey="excelPrice"
               stroke="#3B82F6"
               strokeWidth={4}
-              name="Excel"
+              name="Processed Can Price"
               dot={{ fill: '#3B82F6', r: 6 }}
               activeDot={{ r: 8 }}
             />
@@ -323,7 +390,7 @@ const CommodityPriceChart = () => {
               dataKey="marketPrice"
               stroke="#10B981"
               strokeWidth={4}
-              name="Market"
+              name="Raw Aluminum Cost"
               dot={{ fill: '#10B981', r: 6 }}
               activeDot={{ r: 8 }}
             />
@@ -353,6 +420,36 @@ const CommodityPriceChart = () => {
           <div>Positive Spread</div>
         </div>
       </div>
+
+      {/* ✅ Aluminum-specific insights */}
+      {selectedCommodity === 'aluminum' && aluminumStats && (
+        <div style={{ marginTop: 24, padding: 16, background: '#f0f9ff', borderRadius: 12, border: '1px solid #bae6fd' }}>
+          <h3 style={{ margin: '0 0 12px 0', color: '#0369a1' }}>📊 Aluminum Can Cost Breakdown (per can)</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            <div>
+              <div style={{ color: '#6b7280', fontSize: '0.9em' }}>Avg Processed Can Price</div>
+              <div style={{ fontWeight: 'bold', fontSize: '1.2em' }}>{aluminumStats.avgExcel.toFixed(2)} NGN/can</div>
+            </div>
+            <div>
+              <div style={{ color: '#6b7280', fontSize: '0.9em' }}>Raw Aluminum Material Cost</div>
+              <div style={{ fontWeight: 'bold', fontSize: '1.2em' }}>{aluminumStats.avgMarket.toFixed(2)} NGN/can</div>
+            </div>
+            <div>
+              <div style={{ color: '#6b7280', fontSize: '0.9em' }}>Manufacturing Premium</div>
+              <div style={{ fontWeight: 'bold', fontSize: '1.2em', color: '#ef4444' }}>
+                {(aluminumStats.avgExcel - aluminumStats.avgMarket).toFixed(2)} NGN/can
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 12, fontSize: '0.9em', color: '#6b7280' }}>
+            <strong>Analysis:</strong> Each aluminum can costs <strong>{aluminumStats.avgRatio.toFixed(2)}x</strong> more than the raw aluminum material.
+            The <strong>{((aluminumStats.avgRatio - 1) * 100).toFixed(0)}% premium</strong> covers manufacturing, transportation, packaging, and supplier profit.
+          </div>
+          <div style={{ marginTop: 8, fontSize: '0.85em', color: '#9ca3af' }}>
+            <em>Note: Raw aluminum calculation: $2400/tonne × 1650 NGN/USD ÷ 1000 kg/tonne × 0.013 kg/can = ~51.48 NGN/can</em>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
