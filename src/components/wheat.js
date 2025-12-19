@@ -220,6 +220,7 @@ export const CAN_DATA = [
   { month: 'Feb-25', avgPricePerUnit: 146.72, currency: 'NGN' },
   { month: 'Jan-25', avgPricePerUnit: 150.73, currency: 'NGN' },
   { month: 'Dec-24', avgPricePerUnit: 143.66, currency: 'NGN' },
+  { month: 'Nov-24', avgPricePerUnit: 147.05, currency: 'NGN' },
   { month: 'Oct-24', avgPricePerUnit: 147.05, currency: 'NGN' },
   { month: 'Sep-24', avgPricePerUnit: 145.37, currency: 'NGN' },
   { month: 'Aug-24', avgPricePerUnit: 143.34, currency: 'NGN' },
