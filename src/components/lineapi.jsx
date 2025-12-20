@@ -147,10 +147,15 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
       return usdPerKg * FX_RATES.USD_to_NGN;
 
     case 'palm':
-    case 'crude_palm':
+      // KO is in USD/tonne
       const usdPerKgPalm = value / TONNE_TO_KG;
       return usdPerKgPalm * FX_RATES.USD_to_NGN;
 
+    case 'crude_palm':
+      // CB is crude oil in USD/barrel
+      const BARREL_TO_KG = 136.4; // 1 barrel = 136.4 kg
+      const usdPerKgCrude = value / BARREL_TO_KG;
+      return usdPerKgCrude * FX_RATES.USD_to_NGN;
     case 'sugar':
       const usdPerLb = value / 100;
       const usdPerKgSugar = usdPerLb / LB_TO_KG;
@@ -273,7 +278,7 @@ async function fetchCommodityDataForMonths(symbol, months) {
       const startStr = formatDateForAPI(startDate);
       const endStr = formatDateForAPI(endDate);
       
-      const url = `/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=daily&startdate=${startStr}&enddate=${endStr}`;
+      const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
       
       const response = await fetch(url);
       
@@ -332,7 +337,7 @@ async function fetchDailyPrices(symbol, days = 30) {
     const startStr = formatDateForAPI(startDate);
     const endStr = formatDateForAPI(endDate);
     
-    const url = `https://ds01.ddfplus.com/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=daily&startdate=${startStr}&enddate=${endStr}`;
+    const url = `/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=daily&startdate=${startStr}&enddate=${endStr}`;
     
     const response = await fetch(url);
     
@@ -1096,18 +1101,18 @@ const CommodityDashboard = () => {
               <div>
                 <div style={{ color: '#3B82F6', fontWeight: 600, marginBottom: '4px' }}>Blue Line (Excel)</div>
                 <div style={{ color: '#374151' }}>
-                  Your actual purchase prices, averaged by month
+                  Buying price
                 </div>
               </div>
               <div>
                 <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (API)</div>
                 <div style={{ color: '#374151' }}>
-                  Market prices fetched for each Excel month
+                  API prices
                 </div>
               </div>
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              API fetches daily data for each month and calculates monthly average
+              API fetches daily data 
             </div>
           </div>
         </div>
