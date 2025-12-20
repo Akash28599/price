@@ -332,7 +332,7 @@ async function fetchDailyPrices(symbol, days = 30) {
     const startStr = formatDateForAPI(startDate);
     const endStr = formatDateForAPI(endDate);
     
-    const url = `/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=daily&startdate=${startStr}&enddate=${endStr}`;
+    const url = `https://ds01.ddfplus.com/historical/queryeod.ashx?username=TolaramMR&password=replay&symbol=${symbol}&data=daily&startdate=${startStr}&enddate=${endStr}`;
     
     const response = await fetch(url);
     
