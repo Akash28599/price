@@ -52,7 +52,7 @@ const decimalsByCommodity = {
   aluminum: 2
 };
 
-// Commodity names and colors - UPDATED FOR ALUMINUM
+// Commodity names and colors
 const COMMODITY_CONFIG = {
   wheat: { 
     name: 'Wheat Flour', 
@@ -83,7 +83,7 @@ const COMMODITY_CONFIG = {
     category: 'Softs'
   },
   aluminum: { 
-    name: 'Aluminum (Raw Material)', // UPDATED
+    name: 'Aluminum (Raw Material)',
     icon: '🥫', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
@@ -108,7 +108,7 @@ function formatDateForAPI(date) {
   return date.toISOString().split('T')[0];
 }
 
-// Function to get month key (YYYY-MM) - UPDATED FIX
+// Function to get month key (YYYY-MM)
 function getMonthKey(dateStr) {
   if (!dateStr) return null;
   
@@ -186,7 +186,7 @@ function filterRecentData(data, maxYearsBack = 5) {
   return data.filter(item => {
     if (!item.monthKey) return false;
     const year = parseInt(item.monthKey.split('-')[0]);
-    return year >= 2020 && year <= currentYear + 1; // Only keep 2020-2025/2026
+    return year >= 2020 && year <= currentYear + 1;
   });
 }
 
@@ -202,15 +202,14 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
       return usdPerKg * FX_RATES.USD_to_NGN;
 
     case 'palm':
-      // KO is in USD/tonne
       const usdPerKgPalm = value / TONNE_TO_KG;
       return usdPerKgPalm * FX_RATES.USD_to_NGN;
 
     case 'crude_palm':
-      // CB is crude oil in USD/barrel
-      const BARREL_TO_KG = 136.4; // 1 barrel = 136.4 kg
+      const BARREL_TO_KG = 136.4;
       const usdPerKgCrude = value / BARREL_TO_KG;
       return usdPerKgCrude * FX_RATES.USD_to_NGN;
+    
     case 'sugar':
       const usdPerLb = value / 100;
       const usdPerKgSugar = usdPerLb / LB_TO_KG;
@@ -225,7 +224,7 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
   }
 }
 
-// Convert Excel purchase price to NGN/kg - UPDATED FOR ALUMINUM
+// Convert Excel purchase price to NGN/kg
 function convertExcelPriceToNGNPerKg(commodity, excelItem) {
   if (!excelItem) return null;
   
@@ -256,8 +255,6 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
       return excelItem.cost;
       
     case 'aluminum':
-      // For aluminum, we use negotiated price of 2400 USD/tonne
-      // Convert USD/tonne to NGN/kg
       const usdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
       return usdPerKg * FX_RATES.USD_to_NGN;
       
@@ -281,7 +278,7 @@ function getExcelDateForMonth(commodity, excelItem) {
   }
 }
 
-// Process Excel data by month (average per month) - UPDATED
+// Process Excel data by month (average per month)
 function processExcelDataByMonth(commodity) {
   const rawData = EXCEL_DATA_SOURCES[commodity] || [];
   
@@ -301,7 +298,6 @@ function processExcelDataByMonth(commodity) {
       return;
     }
     
-    // Check if date is reasonable (not in distant past/future)
     const year = parseInt(monthKey.split('-')[0]);
     const currentYear = new Date().getFullYear();
     
@@ -334,7 +330,6 @@ function processExcelDataByMonth(commodity) {
     dates: month.dates
   })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
   
-  // Filter to only recent years (2020-2025)
   const filteredResult = filterRecentData(result, 5);
   
   console.log(`${commodity} processed data:`, {
@@ -346,7 +341,7 @@ function processExcelDataByMonth(commodity) {
   return filteredResult;
 }
 
-// REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month - UPDATED
+// REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month
 async function fetchCommodityDataForMonths(symbol, months) {
   try {
     const monthlyResults = [];
@@ -362,7 +357,7 @@ async function fetchCommodityDataForMonths(symbol, months) {
       return [];
     }
     
-    console.log(`Fetching API data for ${symbol}, months:`, recentMonths);
+    console.log(`Fetching REAL API data for ${symbol}, months:`, recentMonths);
     
     for (const month of recentMonths) {
       const [year, monthNum] = month.split('-').map(Number);
@@ -375,10 +370,16 @@ async function fetchCommodityDataForMonths(symbol, months) {
       const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
       
       try {
+        console.log(`API Request: ${url}`);
         const response = await fetch(url);
         
         if (!response.ok) {
           console.warn(`Failed to fetch ${month} for ${symbol}: HTTP ${response.status}`);
+          monthlyResults.push({
+            monthKey: month,
+            avgPrice: null,
+            dataPoints: 0
+          });
           continue;
         }
         
@@ -386,6 +387,11 @@ async function fetchCommodityDataForMonths(symbol, months) {
         
         if (!text || text.includes('error') || text.includes('No data')) {
           console.warn(`No data for ${month} - ${symbol}`);
+          monthlyResults.push({
+            monthKey: month,
+            avgPrice: null,
+            dataPoints: 0
+          });
           continue;
         }
         
@@ -412,10 +418,20 @@ async function fetchCommodityDataForMonths(symbol, months) {
           console.log(`Successfully fetched ${month} for ${symbol}: ${dailyPrices.length} days, avg: ${monthlyAvg}`);
         } else {
           console.warn(`No valid daily prices for ${month} - ${symbol}`);
+          monthlyResults.push({
+            monthKey: month,
+            avgPrice: null,
+            dataPoints: 0
+          });
         }
         
       } catch (fetchError) {
         console.error(`Error fetching ${month} for ${symbol}:`, fetchError);
+        monthlyResults.push({
+          monthKey: month,
+          avgPrice: null,
+          dataPoints: 0
+        });
       }
       
       // Small delay to avoid rate limiting
@@ -431,7 +447,7 @@ async function fetchCommodityDataForMonths(symbol, months) {
   }
 }
 
-// NEW: Fetch daily prices for a commodity
+// Fetch daily prices for a commodity
 async function fetchDailyPrices(symbol, days = 30) {
   try {
     const endDate = new Date();
@@ -443,6 +459,7 @@ async function fetchDailyPrices(symbol, days = 30) {
     
     const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
     
+    console.log(`Fetching daily prices for ${symbol}: ${url}`);
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -473,6 +490,7 @@ async function fetchDailyPrices(symbol, days = 30) {
       }
     });
     
+    console.log(`Fetched ${dailyData.length} daily prices for ${symbol}`);
     return dailyData.sort((a, b) => new Date(a.date) - new Date(b.date));
     
   } catch (error) {
@@ -481,19 +499,22 @@ async function fetchDailyPrices(symbol, days = 30) {
   }
 }
 
-// NEW: Fetch current price (latest available)
+// Fetch current price (latest available)
 async function fetchCurrentPrice(symbol) {
   try {
-    // Fetch last 2 days to get today and yesterday
-    const dailyData = await fetchDailyPrices(symbol, 2);
+    // Fetch last 7 days to get more reliable data
+    const dailyData = await fetchDailyPrices(symbol, 7);
     
     if (dailyData.length === 0) {
+      console.warn(`No daily data for ${symbol}`);
       return null;
     }
     
-    // Get the latest price (today if available, otherwise yesterday)
+    // Get the latest price
     const latest = dailyData[dailyData.length - 1];
     const previous = dailyData.length >= 2 ? dailyData[dailyData.length - 2] : null;
+    
+    console.log(`Current price for ${symbol}:`, latest.price, 'Previous:', previous?.price);
     
     return {
       current: latest.price,
@@ -508,38 +529,10 @@ async function fetchCurrentPrice(symbol) {
   }
 }
 
-// NEW: Calculate percentage change
+// Calculate percentage change
 function calculatePercentageChange(current, previous) {
   if (!previous || previous === 0) return null;
   return ((current - previous) / previous) * 100;
-}
-
-// NEW: Generate mock live data
-function generateMockLiveData(symbol) {
-  const basePrices = {
-    'ZW': 650,
-    'KO': 950,
-    'SB': 2280,
-    'AL': 2850,
-    'CB': 980
-  };
-  
-  const base = basePrices[symbol] || 1000;
-  const current = base * (1 + (Math.random() - 0.5) * 0.02);
-  const previous = current * (1 + (Math.random() - 0.5) * 0.01);
-  const monthAgo = current * (1 + (Math.random() - 0.5) * 0.05);
-  const lastMonth = monthAgo * (1 + (Math.random() - 0.5) * 0.03);
-  const yearAgo = current * (1 + (Math.random() - 0.5) * 0.15);
-  const lastYear = yearAgo * (1 + (Math.random() - 0.5) * 0.1);
-  
-  return {
-    current,
-    previous,
-    monthAgo,
-    lastMonth,
-    yearAgo,
-    lastYear
-  };
 }
 
 // Process API data by month
@@ -579,8 +572,8 @@ const CommodityDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [loadingLivePrices, setLoadingLivePrices] = useState(false);
   const [error, setError] = useState('');
-  const [useMockData, setUseMockData] = useState(false);
   const [dataDebug, setDataDebug] = useState('');
+  const [apiStatus, setApiStatus] = useState('connecting');
 
   // Process Excel data by month (static, doesn't need API)
   const excelMonthlyData = useMemo(() => {
@@ -592,17 +585,15 @@ const CommodityDashboard = () => {
     
     // For aluminum, create monthly data with negotiated price
     if (!data.aluminum || data.aluminum.length === 0) {
-      // Create months from Jan 2020 to current month
       const months = [];
       const currentDate = new Date();
-      const startDate = new Date(2020, 0, 1); // Jan 2020
+      const startDate = new Date(2020, 0, 1);
       
       for (let d = new Date(startDate); d <= currentDate; d.setMonth(d.getMonth() + 1)) {
         const year = d.getFullYear();
         const month = String(d.getMonth() + 1).padStart(2, '0');
         const monthKey = `${year}-${month}`;
         
-        // Calculate negotiated aluminum price for this month
         const usdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
         const ngnPerKg = usdPerKg * FX_RATES.USD_to_NGN;
         
@@ -637,93 +628,83 @@ const CommodityDashboard = () => {
   useEffect(() => {
     const fetchLivePrices = async () => {
       setLoadingLivePrices(true);
+      setApiStatus('fetching');
       
       try {
         const liveData = {};
         
         for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
-          let priceData;
+          console.log(`Fetching live price for ${commodity} (${symbol})...`);
           
-          if (useMockData) {
-            priceData = generateMockLiveData(symbol);
-          } else {
-            const currentPrice = await fetchCurrentPrice(symbol);
-            if (!currentPrice) {
-              priceData = generateMockLiveData(symbol);
-            } else {
-              // For demo, generate mock monthly/yearly data
-              priceData = {
-                current: currentPrice.current,
-                previous: currentPrice.previous,
-                monthAgo: currentPrice.current * (1 + (Math.random() - 0.5) * 0.05),
-                lastMonth: currentPrice.previous ? currentPrice.previous * (1 + (Math.random() - 0.5) * 0.03) : null,
-                yearAgo: currentPrice.current * (1 + (Math.random() - 0.5) * 0.15),
-                lastYear: currentPrice.current * (1 + (Math.random() - 0.5) * 0.12)
-              };
-            }
+          const currentPrice = await fetchCurrentPrice(symbol);
+          
+          if (!currentPrice) {
+            console.warn(`No live price data for ${commodity}`);
+            liveData[commodity] = {
+              current: null,
+              previous: null,
+              percentages: { day: null, month: null, year: null },
+              symbol,
+              lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'no_data'
+            };
+            continue;
           }
           
           // Convert to NGN/kg
-          const convertedData = {};
-          Object.entries(priceData).forEach(([key, value]) => {
-            if (value !== null) {
-              convertedData[key] = convertApiValueToNGNPerKg(commodity, value);
-            } else {
-              convertedData[key] = null;
-            }
-          });
+          const currentNGN = convertApiValueToNGNPerKg(commodity, currentPrice.current);
+          const previousNGN = currentPrice.previous ? convertApiValueToNGNPerKg(commodity, currentPrice.previous) : null;
           
           // Calculate percentages
           const percentages = {
-            day: convertedData.previous ? 
-              calculatePercentageChange(convertedData.current, convertedData.previous) : null,
-            month: convertedData.lastMonth ? 
-              calculatePercentageChange(convertedData.monthAgo, convertedData.lastMonth) : null,
-            year: convertedData.lastYear ? 
-              calculatePercentageChange(convertedData.yearAgo, convertedData.lastYear) : null
+            day: previousNGN ? calculatePercentageChange(currentNGN, previousNGN) : null
           };
           
           liveData[commodity] = {
-            ...convertedData,
+            current: currentNGN,
+            previous: previousNGN,
             percentages,
             symbol,
-            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'success',
+            rawData: {
+              currentUSD: currentPrice.current,
+              previousUSD: currentPrice.previous,
+              date: currentPrice.date
+            }
           };
+          
+          console.log(`Live price for ${commodity}:`, {
+            currentNGN,
+            previousNGN,
+            percentages
+          });
           
           // Small delay between requests
           await new Promise(resolve => setTimeout(resolve, 200));
         }
         
         setLivePrices(liveData);
+        setApiStatus('connected');
         
       } catch (error) {
         console.error('Error fetching live prices:', error);
-        // Fallback to mock data
-        const mockLiveData = {};
+        setApiStatus('error');
+        
+        // Set empty data instead of mock data
+        const emptyLiveData = {};
         Object.keys(COMMODITY_SYMBOLS).forEach(commodity => {
-          const symbol = COMMODITY_SYMBOLS[commodity];
-          const priceData = generateMockLiveData(symbol);
-          
-          const convertedData = {};
-          Object.entries(priceData).forEach(([key, value]) => {
-            convertedData[key] = convertApiValueToNGNPerKg(commodity, value);
-          });
-          
-          const percentages = {
-            day: calculatePercentageChange(convertedData.current, convertedData.previous),
-            month: calculatePercentageChange(convertedData.monthAgo, convertedData.lastMonth),
-            year: calculatePercentageChange(convertedData.yearAgo, convertedData.lastYear)
-          };
-          
-          mockLiveData[commodity] = {
-            ...convertedData,
-            percentages,
-            symbol,
-            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          emptyLiveData[commodity] = {
+            current: null,
+            previous: null,
+            percentages: { day: null, month: null, year: null },
+            symbol: COMMODITY_SYMBOLS[commodity],
+            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: 'error'
           };
         });
         
-        setLivePrices(mockLiveData);
+        setLivePrices(emptyLiveData);
       } finally {
         setLoadingLivePrices(false);
       }
@@ -735,19 +716,20 @@ const CommodityDashboard = () => {
     const intervalId = setInterval(fetchLivePrices, 5 * 60 * 1000);
     
     return () => clearInterval(intervalId);
-  }, [useMockData]);
+  }, []);
 
   // Fetch API data and combine with Excel data
   useEffect(() => {
     const fetchAllCommodityData = async () => {
       setLoading(true);
       setError('');
+      setApiStatus('fetching_historical');
       
       try {
         const dataPromises = Object.entries(COMMODITY_SYMBOLS).map(async ([commodity, symbol]) => {
           const excelMonthly = excelMonthlyData[commodity] || [];
           
-          console.log(`Fetching data for ${commodity}:`, {
+          console.log(`Fetching historical data for ${commodity}:`, {
             excelMonths: excelMonthly.length,
             monthKeys: excelMonthly.map(m => m.monthKey)
           });
@@ -763,53 +745,11 @@ const CommodityDashboard = () => {
           }
           
           const excelMonths = excelMonthly.map(item => item.monthKey);
-          let apiMonthlyRaw = [];
           
-          if (useMockData) {
-            // Generate mock monthly data
-            const mockData = [];
-            excelMonths.forEach(monthKey => {
-              const basePrices = {
-                'ZW': 650,
-                'KO': 950,
-                'SB': 2280,
-                'AL': 2850,
-                'CB': 980
-              };
-              const base = basePrices[symbol] || 1000;
-              const price = base * (1 + (Math.random() - 0.5) * 0.05);
-              mockData.push({
-                monthKey,
-                avgPrice: price,
-                dataPoints: 20
-              });
-            });
-            apiMonthlyRaw = mockData;
-          } else {
-            apiMonthlyRaw = await fetchCommodityDataForMonths(symbol, excelMonths);
-            
-            if (!apiMonthlyRaw || apiMonthlyRaw.length === 0) {
-              console.warn(`No API data for ${commodity}, using mock data`);
-              const mockData = [];
-              excelMonths.forEach(monthKey => {
-                const basePrices = {
-                  'ZW': 650,
-                  'KO': 950,
-                  'SB': 2280,
-                  'AL': 2850,
-                  'CB': 980
-                };
-                const base = basePrices[symbol] || 1000;
-                const price = base * (1 + (Math.random() - 0.5) * 0.05);
-                mockData.push({
-                  monthKey,
-                  avgPrice: price,
-                  dataPoints: 20
-                });
-              });
-              apiMonthlyRaw = mockData;
-            }
-          }
+          // Fetch REAL API data only (no mock data)
+          const apiMonthlyRaw = await fetchCommodityDataForMonths(symbol, excelMonths);
+          
+          console.log(`API results for ${commodity}:`, apiMonthlyRaw);
           
           const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw);
           const combinedData = combineMonthlyData(excelMonthly, apiMonthly);
@@ -844,58 +784,48 @@ const CommodityDashboard = () => {
         setCommodityData(dataObj);
         setMonthlyComparisonData(comparisonObj);
         
-        // Set debug info
-        const debugInfo = Object.keys(comparisonObj).map(commodity => {
+        // Calculate API data availability
+        const apiDataSummary = Object.keys(comparisonObj).map(commodity => {
           const data = comparisonObj[commodity];
-          if (data.length > 0) {
-            return `${commodity}: ${data.length} months, range: ${data[0].monthKey} to ${data[data.length - 1].monthKey}`;
-          }
-          return `${commodity}: No data`;
+          const apiMonths = data.filter(d => d.apiPrice != null).length;
+          const totalMonths = data.length;
+          return `${commodity}: ${apiMonths}/${totalMonths}`;
         }).join(' | ');
-        setDataDebug(debugInfo);
+        
+        setDataDebug(`API Data: ${apiDataSummary}`);
+        setApiStatus('connected');
         
       } catch (err) {
         console.error('Error in fetchAllCommodityData:', err);
-        setError(`Failed to fetch data: ${err.message}. Using demo data.`);
+        setError(`Failed to fetch data: ${err.message}. Please check your API connection.`);
+        setApiStatus('error');
         
-        // Fallback to demo data
-        const demoData = {};
-        const demoComparison = {};
+        // Set empty data on error
+        const emptyData = {};
+        const emptyComparison = {};
         
         Object.keys(COMMODITY_CONFIG).forEach(commodity => {
           const excelMonthly = excelMonthlyData[commodity] || [];
-          const excelMonths = excelMonthly.map(item => item.monthKey);
-          const mockData = [];
-          excelMonths.forEach(monthKey => {
-            const basePrices = {
-              'ZW': 650,
-              'KO': 950,
-              'SB': 2280,
-              'AL': 2850,
-              'CB': 980
-            };
-            const base = basePrices[COMMODITY_SYMBOLS[commodity]] || 1000;
-            const price = base * (1 + (Math.random() - 0.5) * 0.05);
-            mockData.push({
-              monthKey,
-              avgPrice: price,
-              dataPoints: 20
-            });
-          });
-          const apiMonthly = processApiDataByMonth(commodity, mockData);
-          const combinedData = combineMonthlyData(excelMonthly, apiMonthly);
+          const combinedData = excelMonthly.map(item => ({
+            monthKey: item.monthKey,
+            monthDisplay: item.monthDisplay,
+            excelPrice: item.excelPrice,
+            apiPrice: null,
+            excelTransactions: item.transactionCount,
+            apiDataPoints: 0
+          }));
           
-          demoData[commodity] = {
+          emptyData[commodity] = {
             commodity,
             symbol: COMMODITY_SYMBOLS[commodity],
             lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
           
-          demoComparison[commodity] = combinedData;
+          emptyComparison[commodity] = combinedData;
         });
         
-        setCommodityData(demoData);
-        setMonthlyComparisonData(demoComparison);
+        setCommodityData(emptyData);
+        setMonthlyComparisonData(emptyComparison);
       } finally {
         setLoading(false);
       }
@@ -903,10 +833,11 @@ const CommodityDashboard = () => {
 
     fetchAllCommodityData();
     
-    const intervalId = setInterval(fetchAllCommodityData, 5 * 60 * 1000);
+    // Refresh data every 10 minutes
+    const intervalId = setInterval(fetchAllCommodityData, 10 * 60 * 1000);
     
     return () => clearInterval(intervalId);
-  }, [useMockData, excelMonthlyData]);
+  }, [excelMonthlyData]);
 
   // Prepare chart data for selected commodity
   const prepareChartData = () => {
@@ -916,7 +847,8 @@ const CommodityDashboard = () => {
     console.log(`Preparing chart data for ${selectedCommodity}:`, {
       totalData: data.length,
       filteredData: filteredData.length,
-      months: filteredData.map(d => d.monthKey)
+      months: filteredData.map(d => d.monthKey),
+      apiPrices: filteredData.map(d => ({ month: d.monthKey, price: d.apiPrice }))
     });
     
     return filteredData.map(item => ({
@@ -995,6 +927,23 @@ const CommodityDashboard = () => {
           </div>
         )}
         
+        {!data.apiPrice && (
+          <div style={{ 
+            marginTop: '8px',
+            padding: '8px',
+            backgroundColor: '#fef3c7',
+            borderRadius: '6px',
+            border: '1px solid #fbbf24'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '14px' }}>⚠️</span>
+              <span style={{ fontSize: '11px', color: '#92400e' }}>
+                No market data available for this month
+              </span>
+            </div>
+          </div>
+        )}
+        
         {data.apiPrice && (
           <div style={{ 
             marginTop: '12px', 
@@ -1033,7 +982,7 @@ const CommodityDashboard = () => {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
         <div style={{ marginBottom: '16px' }}>Loading monthly commodity dashboard...</div>
-        <div style={{ color: '#666', fontSize: '14px' }}>Processing Excel data and fetching market prices for all months...</div>
+        <div style={{ color: '#666', fontSize: '14px' }}>Processing Excel data and fetching REAL market prices from API...</div>
       </div>
     );
   }
@@ -1047,7 +996,7 @@ const CommodityDashboard = () => {
       borderRadius: '12px',
       boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
     }}>
-      {/* Header with Data Mode Indicator */}
+      {/* Header */}
       <div style={{ marginBottom: '32px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
@@ -1061,42 +1010,57 @@ const CommodityDashboard = () => {
           
           <div style={{
             padding: '8px 16px',
-            backgroundColor: useMockData ? '#fef3c7' : '#f0f9ff',
+            backgroundColor: '#d1fae5',
             borderRadius: '8px',
-            border: `2px solid ${useMockData ? '#fbbf24' : '#0ea5e9'}`,
+            border: '2px solid #10b981',
             fontSize: '14px',
             fontWeight: '600',
-            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '8px'
-          }} onClick={() => setUseMockData(!useMockData)}>
-            {useMockData ? '🔧 Using Mock Data' : '🌐 Using Real API Data'}
+          }}>
+            🌐 Using Real API Data
           </div>
         </div>
         
-        {/* Data Mode Banner */}
+        {/* API Status Banner */}
         <div style={{
           padding: '12px 16px',
-          backgroundColor: useMockData ? '#fef3c7' : '#d1fae5',
+          backgroundColor: apiStatus === 'connected' ? '#d1fae5' : 
+                          apiStatus === 'error' ? '#fee2e2' : '#fef3c7',
           borderRadius: '8px',
-          border: `2px solid ${useMockData ? '#fbbf24' : '#10b981'}`,
+          border: `2px solid ${apiStatus === 'connected' ? '#10b981' : 
+                             apiStatus === 'error' ? '#dc2626' : '#fbbf24'}`,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          justifyContent: 'space-between',
           gap: '8px',
           marginBottom: '16px'
         }}>
-          <span style={{ fontSize: '18px' }}>
-            {useMockData ? '⚠️' : '✅'}
-          </span>
-          <span style={{ 
-            fontWeight: '600', 
-            color: useMockData ? '#92400e' : '#065f46',
-            fontSize: '14px'
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '18px' }}>
+              {apiStatus === 'connected' ? '✅' : apiStatus === 'error' ? '⚠️' : '🔄'}
+            </span>
+            <span style={{ 
+              fontWeight: '600', 
+              color: apiStatus === 'connected' ? '#065f46' : 
+                     apiStatus === 'error' ? '#dc2626' : '#92400e',
+              fontSize: '14px'
+            }}>
+              {apiStatus === 'connected' ? 'LIVE MODE: Connected to real commodity markets' :
+               apiStatus === 'error' ? 'API ERROR: Failed to fetch market data' :
+               'CONNECTING: Fetching real-time market data...'}
+            </span>
+          </div>
+          
+          <div style={{
+            fontSize: '11px',
+            color: apiStatus === 'connected' ? '#059669' : 
+                   apiStatus === 'error' ? '#dc2626' : '#d97706',
+            fontWeight: '600'
           }}>
-            {useMockData ? 'DEMO MODE: Showing simulated market data' : 'LIVE MODE: Connected to real commodity markets'}
-          </span>
+            {apiStatus === 'connected' ? 'All API calls are real' : 'Trying to connect...'}
+          </div>
         </div>
       </div>
 
@@ -1111,7 +1075,7 @@ const CommodityDashboard = () => {
         color: '#0369a1',
         fontFamily: 'monospace'
       }}>
-        <strong>Data Range:</strong> {dataDebug || 'Loading...'}
+        <strong>API Status:</strong> {dataDebug || 'Loading...'} | <strong>Live Status:</strong> {apiStatus}
       </div>
 
       {/* Error display */}
@@ -1141,6 +1105,7 @@ const CommodityDashboard = () => {
           const comparisonData = monthlyComparisonData[commodity] || [];
           const monthsWithExcelData = comparisonData.filter(item => item.excelPrice != null).length;
           const monthsWithApiData = comparisonData.filter(item => item.apiPrice != null).length;
+          const apiCoverage = monthsWithExcelData > 0 ? Math.round((monthsWithApiData / monthsWithExcelData) * 100) : 0;
           
           return (
             <button
@@ -1169,25 +1134,39 @@ const CommodityDashboard = () => {
                 <span style={{
                   marginLeft: 'auto',
                   display: 'flex',
-                  gap: '4px'
+                  gap: '4px',
+                  flexDirection: 'column',
+                  alignItems: 'flex-end'
                 }}>
                   <span style={{
-                    fontSize: '10px',
-                    backgroundColor: '#3B82F6',
-                    color: 'white',
-                    padding: '1px 4px',
-                    borderRadius: '3px'
+                    display: 'flex',
+                    gap: '2px'
                   }}>
-                    {monthsWithExcelData}
+                    <span style={{
+                      fontSize: '8px',
+                      backgroundColor: '#3B82F6',
+                      color: 'white',
+                      padding: '1px 3px',
+                      borderRadius: '2px'
+                    }}>
+                      {monthsWithExcelData}
+                    </span>
+                    <span style={{
+                      fontSize: '8px',
+                      backgroundColor: monthsWithApiData > 0 ? '#10B981' : '#9ca3af',
+                      color: 'white',
+                      padding: '1px 3px',
+                      borderRadius: '2px'
+                    }}>
+                      {monthsWithApiData}
+                    </span>
                   </span>
                   <span style={{
-                    fontSize: '10px',
-                    backgroundColor: monthsWithApiData > 0 ? '#10B981' : '#9ca3af',
-                    color: 'white',
-                    padding: '1px 4px',
-                    borderRadius: '3px'
+                    fontSize: '8px',
+                    color: apiCoverage >= 80 ? '#059669' : apiCoverage >= 50 ? '#d97706' : '#dc2626',
+                    fontWeight: 'bold'
                   }}>
-                    {monthsWithApiData}
+                    {apiCoverage}% API
                   </span>
                 </span>
               )}
@@ -1223,6 +1202,7 @@ const CommodityDashboard = () => {
               const apiMonths = comparisonData.filter(item => item.apiPrice != null);
               const hasExcelData = excelMonths.length > 0;
               const hasApiData = apiMonths.length > 0;
+              const apiCoverage = hasExcelData ? Math.round((apiMonths.length / excelMonths.length) * 100) : 0;
               
               return (
                 <div 
@@ -1263,7 +1243,7 @@ const CommodityDashboard = () => {
                     fontSize: '12px'
                   }}>
                     <div>
-                      <div style={{ color: '#6b7280', marginBottom: '2px' }}>Excel Data</div>
+                      <div style={{ color: '#6b7280', marginBottom: '2px' }}>Our Data</div>
                       <div style={{ 
                         fontWeight: '600', 
                         color: hasExcelData ? '#3B82F6' : '#9ca3af',
@@ -1277,7 +1257,7 @@ const CommodityDashboard = () => {
                     </div>
                     
                     <div>
-                      <div style={{ color: '#6b7280', marginBottom: '2px' }}>API Data</div>
+                      <div style={{ color: '#6b7280', marginBottom: '2px' }}>Market Data</div>
                       <div style={{ 
                         fontWeight: '600', 
                         color: hasApiData ? '#10B981' : '#9ca3af',
@@ -1291,6 +1271,40 @@ const CommodityDashboard = () => {
                     </div>
                   </div>
                   
+                  {hasExcelData && (
+                    <div style={{ 
+                      marginTop: '12px',
+                      paddingTop: '8px',
+                      borderTop: '1px solid #e5e7eb'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '11px', color: '#6b7280' }}>API Coverage:</span>
+                        <span style={{ 
+                          fontSize: '11px', 
+                          fontWeight: 'bold',
+                          color: apiCoverage >= 80 ? '#059669' : apiCoverage >= 50 ? '#d97706' : '#dc2626'
+                        }}>
+                          {apiCoverage}%
+                        </span>
+                      </div>
+                      <div style={{ 
+                        height: '4px',
+                        backgroundColor: '#e5e7eb',
+                        borderRadius: '2px',
+                        overflow: 'hidden'
+                      }}>
+                        <div 
+                          style={{
+                            height: '100%',
+                            width: `${apiCoverage}%`,
+                            backgroundColor: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#f59e0b' : '#ef4444',
+                            borderRadius: '2px'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  
                   {hasExcelData && commodity === 'aluminum' && (
                     <div style={{ 
                       marginTop: '12px',
@@ -1301,22 +1315,6 @@ const CommodityDashboard = () => {
                     }}>
                       <div>Negotiated: {NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE} USD/tonne</div>
                       <div>~{(NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG * FX_RATES.USD_to_NGN).toFixed(2)} NGN/kg</div>
-                    </div>
-                  )}
-                  
-                  {hasExcelData && commodity !== 'aluminum' && (
-                    <div style={{ 
-                      marginTop: '12px',
-                      paddingTop: '8px',
-                      borderTop: '1px solid #e5e7eb',
-                      fontSize: '11px',
-                      color: '#6b7280'
-                    }}>
-                      <div>Range: {
-                        excelMonths.length > 0 ? 
-                          `${excelMonths[0].monthDisplay} - ${excelMonths[excelMonths.length - 1].monthDisplay}` :
-                          'No data'
-                      }</div>
                     </div>
                   )}
                 </div>
@@ -1345,20 +1343,18 @@ const CommodityDashboard = () => {
                 <div style={{ color: '#374151' }}>
                   {selectedCommodity === 'aluminum' 
                     ? 'Negotiated raw material price: 2400 USD/tonne' 
-                    : 'Your company\'s actual purchase prices'}
+                    : 'Your company\'s actual purchase prices from Excel'}
                 </div>
               </div>
               <div>
                 <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (Market Price)</div>
                 <div style={{ color: '#374151' }}>
-                  {useMockData ? 'Simulated market prices' : 'Real-time market prices from commodity exchanges'}
+                  Real-time market prices from DDFPlus commodity API
                 </div>
               </div>
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              {useMockData 
-                ? 'Note: Using simulated data. Switch to API mode for real market data.' 
-                : 'Note: Connected to DDFPlus API for real commodity data.'}
+              Note: Only real API data is shown. No mock/simulated data is used.
             </div>
           </div>
         </div>
@@ -1377,9 +1373,8 @@ const CommodityDashboard = () => {
               </h3>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
                 {selectedCommodity === 'aluminum' 
-                  ? 'Negotiated raw material price vs Market price (2020-2025)' 
-                  : 'Our purchase prices vs Market prices (2020-2025)'}
-                {useMockData && ' • Using simulated market data'}
+                  ? 'Negotiated raw material price vs Real market prices (2020-2025)' 
+                  : 'Our purchase prices vs Real market prices (2020-2025)'}
               </div>
             </div>
             <div style={{ 
@@ -1458,12 +1453,13 @@ const CommodityDashboard = () => {
                   <Line
                     type="monotone"
                     dataKey="apiPrice"
-                    name="Market Price"
+                    name="Market Price (Real API)"
                     stroke={COMMODITY_CONFIG[selectedCommodity]?.apiColor}
                     strokeWidth={3}
                     dot={{ r: 4, fill: COMMODITY_CONFIG[selectedCommodity]?.apiColor }}
                     activeDot={{ r: 6, fill: COMMODITY_CONFIG[selectedCommodity]?.apiColor }}
-                    connectNulls={true}
+                    connectNulls={false}
+                    strokeDasharray={prepareChartData().some(d => d.apiPrice == null) ? "5 5" : "0"}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -1505,7 +1501,7 @@ const CommodityDashboard = () => {
                   Live Commodity Prices
                 </div>
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                  {useMockData ? 'Simulated market prices' : 'Real-time market prices'} in NGN/kg (Refreshing every 5 minutes)
+                  Real-time market prices from DDFPlus API in NGN/kg (Refreshing every 5 minutes)
                 </div>
               </div>
             </div>
@@ -1516,7 +1512,8 @@ const CommodityDashboard = () => {
                 textAlign: 'center',
                 color: '#6b7280'
               }}>
-                Loading live prices...
+                <div style={{ marginBottom: '8px' }}>Fetching real-time market prices...</div>
+                <div style={{ fontSize: '11px', color: '#9ca3af' }}>Connecting to DDFPlus API...</div>
               </div>
             ) : (
               <div style={{ 
@@ -1530,12 +1527,7 @@ const CommodityDashboard = () => {
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Today</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Yesterday</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Day %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>This Month</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Last Month</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>This Year</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Last Year</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Year %</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1547,6 +1539,9 @@ const CommodityDashboard = () => {
                       if (!liveData) return null;
                       
                       const dec = decimalsByCommodity[commodity] || 2;
+                      const hasData = liveData.current !== null;
+                      const statusColor = hasData ? '#059669' : '#dc2626';
+                      const statusText = hasData ? 'Live' : 'No Data';
                       
                       return (
                         <tr key={commodity} style={{ backgroundColor: rowBg }}>
@@ -1572,9 +1567,9 @@ const CommodityDashboard = () => {
                             textAlign: 'center', 
                             borderBottom: '1px solid #e2e8f0',
                             fontWeight: '700',
-                            color: '#374151'
+                            color: hasData ? '#374151' : '#9ca3af'
                           }}>
-                            {liveData.current?.toFixed(dec) || '—'}
+                            {hasData ? liveData.current?.toFixed(dec) : '—'}
                           </td>
                           
                           {/* Yesterday */}
@@ -1582,9 +1577,9 @@ const CommodityDashboard = () => {
                             padding: '12px', 
                             textAlign: 'center', 
                             borderBottom: '1px solid #e2e8f0',
-                            color: '#6b7280'
+                            color: hasData ? '#6b7280' : '#9ca3af'
                           }}>
-                            {liveData.previous?.toFixed(dec) || '—'}
+                            {hasData ? (liveData.previous?.toFixed(dec) || '—') : '—'}
                           </td>
                           
                           {/* Day % */}
@@ -1593,7 +1588,7 @@ const CommodityDashboard = () => {
                             textAlign: 'center', 
                             borderBottom: '1px solid #e2e8f0'
                           }}>
-                            {liveData.percentages?.day !== null ? (
+                            {hasData && liveData.percentages?.day !== null ? (
                               <span style={{
                                 fontWeight: '600',
                                 color: liveData.percentages.day >= 0 ? '#059669' : '#dc2626',
@@ -1607,86 +1602,22 @@ const CommodityDashboard = () => {
                             ) : '—'}
                           </td>
                           
-                          {/* This Month */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            fontWeight: '600',
-                            color: '#374151'
-                          }}>
-                            {liveData.monthAgo?.toFixed(dec) || '—'}
-                          </td>
-                          
-                          {/* Last Month */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            color: '#6b7280'
-                          }}>
-                            {liveData.lastMonth?.toFixed(dec) || '—'}
-                          </td>
-                          
-                          {/* Month % */}
+                          {/* Status */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
                             borderBottom: '1px solid #e2e8f0'
                           }}>
-                            {liveData.percentages?.month !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.month >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.month >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.month >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.month).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          {/* This Year */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            fontWeight: '600',
-                            color: '#374151'
-                          }}>
-                            {liveData.yearAgo?.toFixed(dec) || '—'}
-                          </td>
-                          
-                          {/* Last Year */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            color: '#6b7280'
-                          }}>
-                            {liveData.lastYear?.toFixed(dec) || '—'}
-                          </td>
-                          
-                          {/* Year % */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {liveData.percentages?.year !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.year >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.year >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.year >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.year).toFixed(2)}%
-                              </span>
-                            ) : '—'}
+                            <span style={{
+                              fontWeight: '600',
+                              color: statusColor,
+                              backgroundColor: statusColor === '#059669' ? '#d1fae5' : '#fee2e2',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              fontSize: '12px'
+                            }}>
+                              {statusText}
+                            </span>
                           </td>
                         </tr>
                       );
@@ -1710,13 +1641,13 @@ const CommodityDashboard = () => {
                 <strong>Last Updated:</strong> {livePrices.wheat?.lastUpdated || '—'}
               </div>
               <div>
-                <strong>Data Mode:</strong> 
+                <strong>Data Source:</strong> 
                 <span style={{ 
                   fontWeight: 'bold', 
-                  color: useMockData ? '#d97706' : '#059669',
+                  color: '#059669',
                   marginLeft: '4px'
                 }}>
-                  {useMockData ? 'Mock Data' : 'Real API'}
+                  Real DDFPlus API
                 </span>
               </div>
               <div>
@@ -1739,11 +1670,10 @@ const CommodityDashboard = () => {
           <span style={{ fontSize: '24px' }}>📅</span>
           <div>
             <div style={{ fontWeight: 600, fontSize: '18px', color: '#0369a1' }}>
-              Month Range Information
+              Data Coverage Information
             </div>
             <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              Showing data range (2020-2025) and API data availability
-              {useMockData && ' • Using simulated market data'}
+              Showing real API data coverage (2020-2025)
             </div>
           </div>
         </div>
@@ -1763,6 +1693,7 @@ const CommodityDashboard = () => {
             
             const firstExcelMonth = excelMonths[0]?.monthDisplay;
             const lastExcelMonth = excelMonths[excelMonths.length - 1]?.monthDisplay;
+            const apiCoverage = Math.round((apiMonths.length / excelMonths.length) * 100);
             
             return (
               <div key={commodity} style={{
@@ -1778,7 +1709,7 @@ const CommodityDashboard = () => {
                 
                 <div style={{ marginBottom: '8px' }}>
                   <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>
-                    {commodity === 'aluminum' ? 'Negotiated Price' : 'Excel Range'}
+                    {commodity === 'aluminum' ? 'Negotiated Price Range' : 'Data Range'}
                   </div>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: '#3B82F6' }}>
                     {firstExcelMonth} - {lastExcelMonth}
@@ -1793,19 +1724,35 @@ const CommodityDashboard = () => {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  fontSize: '12px'
+                  marginBottom: '8px'
                 }}>
                   <span style={{ 
-                    color: apiMonths.length > 0 ? '#10B981' : '#9ca3af',
+                    color: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#f59e0b' : '#ef4444',
                     fontWeight: 600,
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px'
                   }}>
-                    <span>{apiMonths.length > 0 ? '✓' : '✗'}</span>
-                    <span>Market Data: {apiMonths.length}/{excelMonths.length}</span>
+                    <span>{apiCoverage > 0 ? '✓' : '✗'}</span>
+                    <span>API Coverage: {apiCoverage}%</span>
                   </span>
                   <span style={{ color: '#6b7280' }}>{COMMODITY_SYMBOLS[commodity]}</span>
+                </div>
+                
+                <div style={{ 
+                  height: '4px',
+                  backgroundColor: '#e5e7eb',
+                  borderRadius: '2px',
+                  overflow: 'hidden'
+                }}>
+                  <div 
+                    style={{
+                      height: '100%',
+                      width: `${apiCoverage}%`,
+                      backgroundColor: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#f59e0b' : '#ef4444',
+                      borderRadius: '2px'
+                    }}
+                  />
                 </div>
               </div>
             );
