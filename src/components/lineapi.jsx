@@ -17,6 +17,7 @@ import {
 // Commodity symbols for the DDFPlus API
 const COMMODITY_SYMBOLS = {
   wheat: 'ZW*1',
+  milling_wheat: 'ML*1',  // Updated: Milling Wheat symbol
   palm: 'KO*1',
   sugar: 'SB*1',
   aluminum: 'AL*1',
@@ -26,10 +27,12 @@ const COMMODITY_SYMBOLS = {
 // Exchange rates
 const FX_RATES = {
   USD_to_NGN: 1460,
+  EUR_to_NGN: 1600,  // Added for Milling Wheat conversion
   GHS_to_USD: 0.087,
   USD_to_GHS: 11.48,
-  MYR_to_USD: 0.21,  // Malaysian Ringgit to USD (approximate, check current rate)
-  USD_to_MYR: 4.76   // USD to Malaysian Ringgit
+  MYR_to_USD: 0.21,
+  USD_to_MYR: 4.76,
+  EUR_to_USD: 1.08   // Added: Current EUR/USD rate
 };
 
 // Conversion factors
@@ -40,6 +43,7 @@ const ALUMINUM_CAN_WEIGHT_KG = 0.013;
 
 const unitsByCommodity = {
   wheat: 'NGN/kg',
+  milling_wheat: 'NGN/kg',
   palm: 'NGN/kg',
   crude_palm: 'NGN/kg',
   sugar: 'NGN/kg',
@@ -48,6 +52,7 @@ const unitsByCommodity = {
 
 const decimalsByCommodity = {
   wheat: 2,
+  milling_wheat: 2,
   palm: 2,
   crude_palm: 2,
   sugar: 2,
@@ -60,6 +65,13 @@ const COMMODITY_CONFIG = {
     name: 'Wheat Flour', 
     icon: '🌾', 
     excelColor: '#3B82F6',
+    apiColor: '#10B981',
+    category: 'Grains'
+  },
+  milling_wheat: { 
+    name: 'Milling Wheat', 
+    icon: '🌾', 
+    excelColor: '#8B5CF6',  // Purple color
     apiColor: '#10B981',
     category: 'Grains'
   },
@@ -96,6 +108,7 @@ const COMMODITY_CONFIG = {
 // Excel data mapping by commodity
 const EXCEL_DATA_SOURCES = {
   wheat: COMPLETE_WHEAT_DATA,
+  milling_wheat: COMPLETE_WHEAT_DATA,  // Uses same wheat data
   palm: COMPLETE_PALM_OIL_DATA,
   crude_palm: COMPLETE_CRUDE_PALM_OIL_DATA,
   sugar: SUGAR_MONTH_COST,
@@ -192,40 +205,46 @@ function filterRecentData(data, maxYearsBack = 5) {
 }
 
 // Convert API value to NGN/kg for all commodities
+// Update the convertApiValueToNGNPerKg function for milling_wheat:
 function convertApiValueToNGNPerKg(commodity, apiValue) {
   if (apiValue == null || isNaN(Number(apiValue))) return null;
   const value = Number(apiValue);
 
   switch(commodity) {
     case 'wheat':
-      // ZW*1: returns US cents per bushel ✓
+      // ZW*1: returns US cents per bushel
       const usdPerBushel = value / 100;
       const usdPerKg = usdPerBushel / BUSHEL_TO_KG_WHEAT;
       return usdPerKg * FX_RATES.USD_to_NGN;
 
+    case 'milling_wheat':
+      // ML*1: returns Euros per metric ton (NOT US cents per bushel)
+      // Example: 200 means 200 EUR/tonne
+      const eurPerTonne = value;
+      const eurPerKg = eurPerTonne / TONNE_TO_KG; // Convert to EUR/kg
+      return eurPerKg * FX_RATES.EUR_to_NGN; // Convert EUR to NGN
+
     case 'palm':
       // KO*1: returns Malaysian Ringgit (MYR) per metric ton
-      // Example: 3500 means 3,500 MYR/tonne
       const myrPerTonne = value;
-      const myrPerKg = myrPerTonne / 1000; // Convert to MYR/kg
-      const usdPerKgPalm = myrPerKg * FX_RATES.MYR_to_USD; // Convert MYR to USD
-      return usdPerKgPalm * FX_RATES.USD_to_NGN; // Convert USD to NGN
+      const myrPerKg = myrPerTonne / 1000;
+      const usdPerKgPalm = myrPerKg * FX_RATES.MYR_to_USD;
+      return usdPerKgPalm * FX_RATES.USD_to_NGN;
 
     case 'crude_palm':
-      // CB*1: This might be Brent Crude Oil, not Crude Palm Oil!
-      // Check if this symbol is correct for Crude Palm Oil
+      // CB*1: Brent Crude Oil
       const BARREL_TO_KG = 136.4;
       const usdPerKgCrude = value / BARREL_TO_KG;
       return usdPerKgCrude * FX_RATES.USD_to_NGN;
     
     case 'sugar':
-      // SB*1: returns US cents per pound ✓
+      // SB*1: returns US cents per pound
       const usdPerLb = value / 100;
       const usdPerKgSugar = usdPerLb / LB_TO_KG;
       return usdPerKgSugar * FX_RATES.USD_to_NGN;
 
     case 'aluminum':
-      // AL*1: returns US dollars per metric ton ✓
+      // AL*1: returns US dollars per metric ton
       const usdPerKgAl = value / TONNE_TO_KG;
       return usdPerKgAl * FX_RATES.USD_to_NGN;
 
@@ -233,13 +252,13 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
       return value;
   }
 }
-
 // Convert Excel purchase price to NGN/kg
 function convertExcelPriceToNGNPerKg(commodity, excelItem) {
   if (!excelItem) return null;
   
   switch(commodity) {
     case 'wheat':
+    case 'milling_wheat':  // Added milling wheat with same logic
       if (excelItem.currency === 'USD') {
         return excelItem.rate * FX_RATES.USD_to_NGN;
       } else if (excelItem.currency === 'GHS') {
@@ -277,6 +296,7 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
 function getExcelDateForMonth(commodity, excelItem) {
   switch(commodity) {
     case 'wheat':
+    case 'milling_wheat':  // Added milling wheat
     case 'palm':
     case 'crude_palm':
       return excelItem.poDate;
@@ -352,7 +372,6 @@ function processExcelDataByMonth(commodity) {
 }
 
 // REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month
-// REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month
 async function fetchCommodityDataForMonths(symbol, months) {
   try {
     const monthlyResults = [];
@@ -411,8 +430,8 @@ async function fetchCommodityDataForMonths(symbol, months) {
           
           // CSV format: Symbol,Date,Open,High,Low,Close,Volume,OpenInterest
           if (parts.length >= 6) {
-            const dateStr = parts[1]; // Date is at index 1
-            const closePrice = parseFloat(parts[5]); // Close is at index 5
+            const dateStr = parts[1];
+            const closePrice = parseFloat(parts[5]);
             
             // Verify this date belongs to the requested month
             const date = new Date(dateStr);
@@ -440,14 +459,12 @@ async function fetchCommodityDataForMonths(symbol, months) {
             monthKey: month,
             avgPrice: monthlyAvg,
             dataPoints: dailyPrices.length,
-            sampleDates: dailyPrices.slice(0, 3).map(d => d.date) // For debugging
+            sampleDates: dailyPrices.slice(0, 3).map(d => d.date)
           });
           
           console.log(`✅ ${month} for ${symbol}: ${dailyPrices.length} trading days, avg: ${monthlyAvg.toFixed(2)}`);
-          console.log(`   Sample prices: ${dailyPrices.slice(0, 3).map(d => d.price.toFixed(2)).join(', ')}...`);
         } else {
           console.warn(`No valid daily prices for ${month} - ${symbol}`);
-          console.log(`   Raw text sample: ${text.substring(0, 200)}...`);
         }
         
       } catch (fetchError) {
@@ -472,28 +489,26 @@ async function fetchCommodityDataForMonths(symbol, months) {
   }
 }
 
-// NEW: Fetch monthly prices with better variation detection
+// Fetch monthly prices with better variation detection
 async function fetchMonthlyPricesWithVariation(symbol, months) {
   try {
     const monthlyResults = await fetchCommodityDataForMonths(symbol, months);
     
-    // If we have no data, return empty
     if (monthlyResults.length === 0) {
       console.warn(`No API data for ${symbol}`);
       return [];
     }
     
-    // Check if all prices are the same (API returning constant values)
+    // Check if all prices are the same
     const allPrices = monthlyResults.map(r => r.avgPrice);
     const uniquePrices = [...new Set(allPrices.map(p => p.toFixed(2)))];
     
     if (uniquePrices.length === 1) {
       console.warn(`⚠️ API returning constant prices for ${symbol}: ${uniquePrices[0]}`);
       
-      // Try fetching a longer time range to get variation
+      // Try fetching a longer time range
       console.log(`Trying to fetch more data for ${symbol} to get variation...`);
       
-      // Fetch last 2 years of daily data to calculate realistic monthly averages
       const endDate = new Date();
       const startDate = new Date();
       startDate.setFullYear(endDate.getFullYear() - 2);
@@ -573,7 +588,6 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
 }
 
 // Fetch daily prices for a commodity
-// Fetch daily prices for a commodity
 async function fetchDailyPrices(symbol, days = 30) {
   try {
     const endDate = new Date();
@@ -604,10 +618,9 @@ async function fetchDailyPrices(symbol, days = 30) {
     lines.forEach(line => {
       const parts = line.split(',').map(p => p.trim());
       if (parts.length >= 6) {
-        // CSV format: Symbol,Date,Open,High,Low,Close,Volume,OpenInterest
         const symbol = parts[0];
-        const date = parts[1]; // Date is at index 1
-        const closePrice = parseFloat(parts[5]); // Close is at index 5
+        const date = parts[1];
+        const closePrice = parseFloat(parts[5]);
         const volume = parts.length > 6 ? parseInt(parts[6]) : 0;
         
         if (!isNaN(closePrice) && closePrice > 0) {
@@ -633,8 +646,8 @@ async function fetchDailyPrices(symbol, days = 30) {
 // Fetch current price with weekly and yearly data
 async function fetchCurrentPriceWithHistory(symbol) {
   try {
-    // Fetch last 30 days for current, weekly, and monthly data
-    const dailyData = await fetchDailyPrices(symbol, 365); // Get 1 year for better calculations
+    // Fetch last 365 days for current, weekly, and monthly data
+    const dailyData = await fetchDailyPrices(symbol, 365);
     
     if (dailyData.length === 0) {
       console.warn(`No daily data for ${symbol}`);
@@ -1563,21 +1576,21 @@ const CommodityDashboard = () => {
                 <div style={{ color: '#374151' }}>
                   {selectedCommodity === 'aluminum' 
                     ? 'Negotiated raw material price: 2400 USD/tonne' 
-                    : 'Excel Price'}
+                    : 'Excel Purchase Price'}
                 </div>
               </div>
               <div>
                 <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (Market Price)</div>
                 <div style={{ color: '#374151' }}>
-                  API prices
+                  DDFPlus API prices (ML*1 for Milling Wheat)
                   <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                    ⚠️ API failed
+                    {selectedCommodity === 'milling_wheat' ? 'ML*1: Milling Wheat Futures' : 'Real-time commodity data'}
                   </div>
                 </div>
               </div>
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              Note: Only real API data is shown. System detects and adjusts for constant API responses.
+              Note: Milling Wheat uses same Excel data as Wheat Flour but different API symbol (ML*1)
             </div>
           </div>
         </div>
@@ -1614,7 +1627,7 @@ const CommodityDashboard = () => {
                 alignItems: 'center',
                 gap: '6px'
               }}>
-                <div style={{ width: '10px', height: '3px', backgroundColor: '#3B82F6' }}></div>
+                <div style={{ width: '10px', height: '3px', backgroundColor: COMMODITY_CONFIG[selectedCommodity]?.excelColor }}></div>
                 <span>Our Price: {monthlyComparisonData[selectedCommodity]?.filter(item => item.excelPrice != null).length || 0} months</span>
               </div>
               <div style={{ 
@@ -1704,7 +1717,7 @@ const CommodityDashboard = () => {
             )}
           </div>
 
-          {/* LIVE PRICES TABLE - WITH WEEK AND YEAR COLUMNS */}
+          {/* LIVE PRICES TABLE */}
           <div style={{
             marginTop: '24px',
             padding: '16px',
@@ -2007,17 +2020,18 @@ const CommodityDashboard = () => {
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
               • Real-time DDFPlus Commodity API<br/>
               • Excel Purchase Records<br/>
-              • FX Rates: USD/NGN 1650<br/>
+              • FX Rates: USD/NGN 1460, EUR/NGN 1600<br/>
               • Dates: 2020-2025 only
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Legend</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Commodity Symbols</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • <span style={{ color: '#3B82F6' }}>Blue</span>: Our purchase prices<br/>
-              • <span style={{ color: '#10B981' }}>Green</span>: Market prices (API)<br/>
-              • <span style={{ color: '#f59e0b' }}>Yellow warning</span>: Constant API prices<br/>
-              • Dashed line: Missing API data
+              • Wheat Flour: ZW*1<br/>
+              • Milling Wheat: ML*1<br/>
+              • Palm Oil: KO*1<br/>
+              • Sugar: SB*1<br/>
+              • Aluminum: AL*1
             </div>
           </div>
           <div>
