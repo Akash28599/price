@@ -105,23 +105,63 @@ function formatDateForAPI(date) {
   return date.toISOString().split('T')[0];
 }
 
-// Function to get month key (YYYY-MM)
+// Function to get month key (YYYY-MM) - UPDATED FIX
 function getMonthKey(dateStr) {
-  const date = new Date(dateStr);
-  if (isNaN(date)) {
-    if (dateStr.includes('-')) {
+  if (!dateStr) return null;
+  
+  // If it's already in YYYY-MM format
+  if (/^\d{4}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+  
+  // Handle Excel date formats
+  if (typeof dateStr === 'string') {
+    // Handle format like "Apr-24" or "Apr-2024"
+    if (dateStr.match(/^[A-Za-z]{3,}-\d{2,4}$/)) {
       const [monthStr, yearStr] = dateStr.split('-');
       const monthNames = {
         'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
         'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12',
+        'January': '01', 'February': '02', 'March': '03', 'April': '04',
+        'May': '05', 'June': '06', 'July': '07', 'August': '08',
+        'September': '09', 'October': '10', 'November': '11', 'December': '12'
       };
-      const year = yearStr.length === 2 ? `20${yearStr}` : yearStr;
-      return `${year}-${monthNames[monthStr] || '01'}`;
+      
+      const month = monthNames[monthStr] || '01';
+      let year = parseInt(yearStr);
+      
+      // Convert 2-digit year to 4-digit (assuming 2000s for recent years)
+      if (yearStr.length === 2) {
+        const currentYear = new Date().getFullYear();
+        const shortYear = parseInt(yearStr);
+        // If year is > current year's last 2 digits, it's probably 1900s
+        year = shortYear + (shortYear <= (currentYear % 100) ? 2000 : 1900);
+      }
+      
+      return `${year}-${month}`;
     }
-    return null;
+    
+    // Handle ISO date strings
+    if (dateStr.includes('T')) {
+      const date = new Date(dateStr);
+      if (!isNaN(date)) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      }
+    }
   }
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  
+  // Try parsing as Date object
+  try {
+    const date = new Date(dateStr);
+    if (!isNaN(date)) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    }
+  } catch (e) {
+    console.warn('Failed to parse date:', dateStr, e);
+  }
+  
+  return null;
 }
 
 // Function to get month display name
@@ -133,6 +173,18 @@ function getMonthDisplay(monthKey) {
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
   ];
   return `${monthNames[parseInt(month) - 1]} ${year}`;
+}
+
+// Function to validate and filter recent data (2020-2025)
+function filterRecentData(data, maxYearsBack = 5) {
+  const currentYear = new Date().getFullYear();
+  const minYear = currentYear - maxYearsBack;
+  
+  return data.filter(item => {
+    if (!item.monthKey) return false;
+    const year = parseInt(item.monthKey.split('-')[0]);
+    return year >= 2020 && year <= currentYear + 1; // Only keep 2020-2025/2026
+  });
 }
 
 // Convert API value to NGN/kg for all commodities
@@ -227,17 +279,35 @@ function getExcelDateForMonth(commodity, excelItem) {
   }
 }
 
-// Process Excel data by month (average per month)
+// Process Excel data by month (average per month) - UPDATED
 function processExcelDataByMonth(commodity) {
   const rawData = EXCEL_DATA_SOURCES[commodity] || [];
   
+  console.log(`Processing ${commodity} data:`, {
+    rawDataLength: rawData.length,
+    sampleItems: rawData.slice(0, 3)
+  });
+  
   const monthlyData = {};
   
-  rawData.forEach(item => {
+  rawData.forEach((item, index) => {
     const dateStr = getExcelDateForMonth(commodity, item);
     const monthKey = getMonthKey(dateStr);
     
-    if (!monthKey) return;
+    if (!monthKey) {
+      console.warn(`Could not parse date for ${commodity} item ${index}:`, dateStr);
+      return;
+    }
+    
+    // Check if date is reasonable (not in distant past/future)
+    const year = parseInt(monthKey.split('-')[0]);
+    const currentYear = new Date().getFullYear();
+    
+    // Only keep data from 2020 onwards
+    if (year < 2020 || year > currentYear + 1) {
+      console.warn(`Skipping unrealistic year for ${commodity}:`, monthKey, 'from date:', dateStr);
+      return;
+    }
     
     const ngnPerKg = convertExcelPriceToNGNPerKg(commodity, item);
     if (ngnPerKg == null) return;
@@ -262,15 +332,37 @@ function processExcelDataByMonth(commodity) {
     dates: month.dates
   })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
   
-  return result;
+  // Filter to only recent years (2020-2025)
+  const filteredResult = filterRecentData(result, 5);
+  
+  console.log(`${commodity} processed data:`, {
+    totalMonths: result.length,
+    filteredMonths: filteredResult.length,
+    months: filteredResult.map(m => m.monthKey)
+  });
+  
+  return filteredResult;
 }
 
-// REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month
+// REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month - UPDATED
 async function fetchCommodityDataForMonths(symbol, months) {
   try {
     const monthlyResults = [];
     
-    for (const month of months) {
+    // Filter months to only recent ones (2020 onwards)
+    const recentMonths = months.filter(monthKey => {
+      const year = parseInt(monthKey.split('-')[0]);
+      return year >= 2020;
+    });
+    
+    if (recentMonths.length === 0) {
+      console.warn(`No recent months to fetch for ${symbol}`);
+      return [];
+    }
+    
+    console.log(`Fetching API data for ${symbol}, months:`, recentMonths);
+    
+    for (const month of recentMonths) {
       const [year, monthNum] = month.split('-').map(Number);
       const startDate = new Date(year, monthNum - 1, 1);
       const endDate = new Date(year, monthNum, 0);
@@ -280,45 +372,55 @@ async function fetchCommodityDataForMonths(symbol, months) {
       
       const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
       
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        console.warn(`Failed to fetch ${month} for ${symbol}: HTTP ${response.status}`);
-        continue;
-      }
-      
-      const text = await response.text();
-      
-      if (!text || text.includes('error') || text.includes('No data')) {
-        console.warn(`No data for ${month} - ${symbol}`);
-        continue;
-      }
-      
-      const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
-      
-      const dailyPrices = [];
-      lines.forEach(line => {
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length >= 6) {
-          const closePrice = parseFloat(parts[5]);
-          if (!isNaN(closePrice)) {
-            dailyPrices.push(closePrice);
-          }
+      try {
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          console.warn(`Failed to fetch ${month} for ${symbol}: HTTP ${response.status}`);
+          continue;
         }
-      });
-      
-      if (dailyPrices.length > 0) {
-        const monthlyAvg = dailyPrices.reduce((sum, price) => sum + price, 0) / dailyPrices.length;
-        monthlyResults.push({
-          monthKey: month,
-          avgPrice: monthlyAvg,
-          dataPoints: dailyPrices.length
+        
+        const text = await response.text();
+        
+        if (!text || text.includes('error') || text.includes('No data')) {
+          console.warn(`No data for ${month} - ${symbol}`);
+          continue;
+        }
+        
+        const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
+        
+        const dailyPrices = [];
+        lines.forEach(line => {
+          const parts = line.split(',').map(p => p.trim());
+          if (parts.length >= 6) {
+            const closePrice = parseFloat(parts[5]);
+            if (!isNaN(closePrice)) {
+              dailyPrices.push(closePrice);
+            }
+          }
         });
+        
+        if (dailyPrices.length > 0) {
+          const monthlyAvg = dailyPrices.reduce((sum, price) => sum + price, 0) / dailyPrices.length;
+          monthlyResults.push({
+            monthKey: month,
+            avgPrice: monthlyAvg,
+            dataPoints: dailyPrices.length
+          });
+          console.log(`Successfully fetched ${month} for ${symbol}: ${dailyPrices.length} days, avg: ${monthlyAvg}`);
+        } else {
+          console.warn(`No valid daily prices for ${month} - ${symbol}`);
+        }
+        
+      } catch (fetchError) {
+        console.error(`Error fetching ${month} for ${symbol}:`, fetchError);
       }
       
+      // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     
+    console.log(`Total monthly results for ${symbol}:`, monthlyResults.length);
     return monthlyResults;
     
   } catch (error) {
@@ -337,7 +439,7 @@ async function fetchDailyPrices(symbol, days = 30) {
     const startStr = formatDateForAPI(startDate);
     const endStr = formatDateForAPI(endDate);
     
-   const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
+    const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
     
     const response = await fetch(url);
     
@@ -476,13 +578,27 @@ const CommodityDashboard = () => {
   const [loadingLivePrices, setLoadingLivePrices] = useState(false);
   const [error, setError] = useState('');
   const [useMockData, setUseMockData] = useState(false);
+  const [dataDebug, setDataDebug] = useState('');
 
   // Process Excel data by month (static, doesn't need API)
   const excelMonthlyData = useMemo(() => {
+    console.log('Processing Excel data for all commodities...');
     const data = {};
     Object.keys(COMMODITY_CONFIG).forEach(commodity => {
       data[commodity] = processExcelDataByMonth(commodity);
     });
+    
+    // Log data summary
+    Object.keys(data).forEach(commodity => {
+      console.log(`${commodity} Excel months:`, data[commodity].length);
+      if (data[commodity].length > 0) {
+        console.log(`${commodity} date range:`, 
+          data[commodity][0]?.monthKey, 'to', 
+          data[commodity][data[commodity].length - 1]?.monthKey
+        );
+      }
+    });
+    
     return data;
   }, []);
 
@@ -600,7 +716,13 @@ const CommodityDashboard = () => {
         const dataPromises = Object.entries(COMMODITY_SYMBOLS).map(async ([commodity, symbol]) => {
           const excelMonthly = excelMonthlyData[commodity] || [];
           
+          console.log(`Fetching data for ${commodity}:`, {
+            excelMonths: excelMonthly.length,
+            monthKeys: excelMonthly.map(m => m.monthKey)
+          });
+          
           if (excelMonthly.length === 0) {
+            console.warn(`No Excel data for ${commodity}`);
             return {
               commodity,
               symbol,
@@ -636,6 +758,7 @@ const CommodityDashboard = () => {
             apiMonthlyRaw = await fetchCommodityDataForMonths(symbol, excelMonths);
             
             if (!apiMonthlyRaw || apiMonthlyRaw.length === 0) {
+              console.warn(`No API data for ${commodity}, using mock data`);
               const mockData = [];
               excelMonths.forEach(monthKey => {
                 const basePrices = {
@@ -660,6 +783,15 @@ const CommodityDashboard = () => {
           const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw);
           const combinedData = combineMonthlyData(excelMonthly, apiMonthly);
           
+          console.log(`Combined data for ${commodity}:`, {
+            totalMonths: combinedData.length,
+            excelDataPoints: combinedData.filter(d => d.excelPrice).length,
+            apiDataPoints: combinedData.filter(d => d.apiPrice).length,
+            dateRange: combinedData.length > 0 ? 
+              `${combinedData[0].monthKey} to ${combinedData[combinedData.length - 1].monthKey}` : 
+              'No data'
+          });
+          
           return {
             commodity,
             symbol,
@@ -680,6 +812,16 @@ const CommodityDashboard = () => {
         
         setCommodityData(dataObj);
         setMonthlyComparisonData(comparisonObj);
+        
+        // Set debug info
+        const debugInfo = Object.keys(comparisonObj).map(commodity => {
+          const data = comparisonObj[commodity];
+          if (data.length > 0) {
+            return `${commodity}: ${data.length} months, range: ${data[0].monthKey} to ${data[data.length - 1].monthKey}`;
+          }
+          return `${commodity}: No data`;
+        }).join(' | ');
+        setDataDebug(debugInfo);
         
       } catch (err) {
         console.error('Error in fetchAllCommodityData:', err);
@@ -738,7 +880,15 @@ const CommodityDashboard = () => {
   // Prepare chart data for selected commodity
   const prepareChartData = () => {
     const data = monthlyComparisonData[selectedCommodity] || [];
-    return data.filter(item => item.excelPrice != null).map(item => ({
+    const filteredData = data.filter(item => item.excelPrice != null);
+    
+    console.log(`Preparing chart data for ${selectedCommodity}:`, {
+      totalData: data.length,
+      filteredData: filteredData.length,
+      months: filteredData.map(d => d.monthKey)
+    });
+    
+    return filteredData.map(item => ({
       month: item.monthDisplay,
       monthKey: item.monthKey,
       excelPrice: item.excelPrice,
@@ -883,6 +1033,20 @@ const CommodityDashboard = () => {
             {useMockData ? '🔧 Using Mock Data' : '🌐 Using DDFPlus API'}
           </div>
         </div>
+      </div>
+
+      {/* Debug info */}
+      <div style={{
+        marginBottom: '16px',
+        padding: '8px 12px',
+        backgroundColor: '#f0f9ff',
+        borderRadius: '6px',
+        border: '1px solid #bae6fd',
+        fontSize: '11px',
+        color: '#0369a1',
+        fontFamily: 'monospace'
+      }}>
+        <strong>Data Range:</strong> {dataDebug || 'Loading...'}
       </div>
 
       {/* Error display */}
@@ -1101,18 +1265,18 @@ const CommodityDashboard = () => {
               <div>
                 <div style={{ color: '#3B82F6', fontWeight: 600, marginBottom: '4px' }}>Blue Line (Excel)</div>
                 <div style={{ color: '#374151' }}>
-                  Buying price
+                  Your company's actual purchase prices (Excel data)
                 </div>
               </div>
               <div>
                 <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (API)</div>
                 <div style={{ color: '#374151' }}>
-                  API prices
+                  Market prices from commodity exchanges
                 </div>
               </div>
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              API fetches daily data 
+              Note: Only showing data from 2020 onwards. Old dates like "Apr-01" are filtered out.
             </div>
           </div>
         </div>
@@ -1130,7 +1294,7 @@ const CommodityDashboard = () => {
                 {COMMODITY_CONFIG[selectedCommodity]?.name} - Monthly Price Comparison
               </h3>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                All Excel months shown with market price comparison
+                All Excel months shown with market price comparison (2020-2025)
               </div>
             </div>
             <div style={{ 
@@ -1181,6 +1345,7 @@ const CommodityDashboard = () => {
                     angle={-45}
                     textAnchor="end"
                     height={60}
+                    domain={['dataMin', 'dataMax']}
                   />
                   <YAxis 
                     tickFormatter={value => `${value.toFixed(decimalsByCommodity[selectedCommodity])}`}
@@ -1229,13 +1394,13 @@ const CommodityDashboard = () => {
               }}>
                 <div style={{ textAlign: 'center', color: '#6b7280' }}>
                   <div style={{ fontSize: '16px', marginBottom: '8px' }}>No monthly data available</div>
-                  <div style={{ fontSize: '14px' }}>No Excel purchase data found for this commodity</div>
+                  <div style={{ fontSize: '14px' }}>No recent Excel purchase data found for this commodity (2020-2025)</div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* LIVE PRICES TABLE - Replaced Data Debug */}
+          {/* LIVE PRICES TABLE */}
           <div style={{
             marginTop: '24px',
             padding: '16px',
@@ -1485,7 +1650,7 @@ const CommodityDashboard = () => {
               Month Range Information
             </div>
             <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              Showing Excel data range and API data availability
+              Showing Excel data range (2020-2025) and API data availability
             </div>
           </div>
         </div>
@@ -1524,7 +1689,7 @@ const CommodityDashboard = () => {
                     {firstExcelMonth} - {lastExcelMonth}
                   </div>
                   <div style={{ fontSize: '11px', color: '#9ca3af' }}>
-                    {excelMonths.length} months
+                    {excelMonths.length} months (2020-2025)
                   </div>
                 </div>
                 
