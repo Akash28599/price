@@ -25,9 +25,9 @@ const COMMODITY_SYMBOLS = {
 
 // Exchange rates
 const FX_RATES = {
-  USD_to_NGN: 1650,
+  USD_to_NGN: 1460,
   GHS_to_USD: 0.087,
-  USD_to_GHS: 11.44,
+  USD_to_GHS: 11.48,
 };
 
 // Conversion factors
