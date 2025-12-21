@@ -52,7 +52,7 @@ const decimalsByCommodity = {
   aluminum: 2
 };
 
-// Commodity names and colors
+// Commodity names and colors - UPDATED FOR ALUMINUM
 const COMMODITY_CONFIG = {
   wheat: { 
     name: 'Wheat Flour', 
@@ -83,7 +83,7 @@ const COMMODITY_CONFIG = {
     category: 'Softs'
   },
   aluminum: { 
-    name: 'Aluminum', 
+    name: 'Aluminum (Raw Material)', // UPDATED
     icon: '🥫', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
@@ -99,6 +99,9 @@ const EXCEL_DATA_SOURCES = {
   sugar: SUGAR_MONTH_COST,
   aluminum: CAN_DATA
 };
+
+// Negotiated aluminum price - 2400 USD/tonne
+const NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE = 2400;
 
 // Function to format date for API
 function formatDateForAPI(date) {
@@ -222,7 +225,7 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
   }
 }
 
-// Convert Excel purchase price to NGN/kg
+// Convert Excel purchase price to NGN/kg - UPDATED FOR ALUMINUM
 function convertExcelPriceToNGNPerKg(commodity, excelItem) {
   if (!excelItem) return null;
   
@@ -253,11 +256,10 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
       return excelItem.cost;
       
     case 'aluminum':
-      if (excelItem.avgPricePerUnit) {
-        const ngnPerCan = excelItem.avgPricePerUnit;
-        return ngnPerCan / ALUMINUM_CAN_WEIGHT_KG;
-      }
-      return null;
+      // For aluminum, we use negotiated price of 2400 USD/tonne
+      // Convert USD/tonne to NGN/kg
+      const usdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
+      return usdPerKg * FX_RATES.USD_to_NGN;
       
     default:
       return null;
@@ -587,6 +589,35 @@ const CommodityDashboard = () => {
     Object.keys(COMMODITY_CONFIG).forEach(commodity => {
       data[commodity] = processExcelDataByMonth(commodity);
     });
+    
+    // For aluminum, create monthly data with negotiated price
+    if (!data.aluminum || data.aluminum.length === 0) {
+      // Create months from Jan 2020 to current month
+      const months = [];
+      const currentDate = new Date();
+      const startDate = new Date(2020, 0, 1); // Jan 2020
+      
+      for (let d = new Date(startDate); d <= currentDate; d.setMonth(d.getMonth() + 1)) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const monthKey = `${year}-${month}`;
+        
+        // Calculate negotiated aluminum price for this month
+        const usdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
+        const ngnPerKg = usdPerKg * FX_RATES.USD_to_NGN;
+        
+        months.push({
+          monthKey,
+          monthDisplay: getMonthDisplay(monthKey),
+          excelPrice: ngnPerKg,
+          transactionCount: 1,
+          dates: [monthKey]
+        });
+      }
+      
+      data.aluminum = months;
+      console.log('Generated aluminum data with negotiated price:', months.length, 'months');
+    }
     
     // Log data summary
     Object.keys(data).forEach(commodity => {
@@ -931,9 +962,15 @@ const CommodityDashboard = () => {
             <span style={{ fontWeight: 'bold', color: config.excelColor, fontSize: '16px' }}>
               {data.excelPrice.toFixed(dec)} NGN/kg
             </span>
-            <span style={{ fontSize: '11px', color: '#9ca3af' }}>
-              {data.excelTransactions} transaction{data.excelTransactions !== 1 ? 's' : ''}
-            </span>
+            {selectedCommodity === 'aluminum' ? (
+              <span style={{ fontSize: '11px', color: '#9ca3af' }}>
+                Negotiated: {NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE} USD/tonne
+              </span>
+            ) : (
+              <span style={{ fontSize: '11px', color: '#9ca3af' }}>
+                {data.excelTransactions} transaction{data.excelTransactions !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
         </div>
         
@@ -1010,9 +1047,9 @@ const CommodityDashboard = () => {
       borderRadius: '12px',
       boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
     }}>
-      {/* Header */}
+      {/* Header with Data Mode Indicator */}
       <div style={{ marginBottom: '32px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 600, color: '#1e40af' }}>
               📈 Monthly Commodity Price Comparison
@@ -1027,11 +1064,39 @@ const CommodityDashboard = () => {
             backgroundColor: useMockData ? '#fef3c7' : '#f0f9ff',
             borderRadius: '8px',
             border: `2px solid ${useMockData ? '#fbbf24' : '#0ea5e9'}`,
-            fontSize: '12px',
-            cursor: 'pointer'
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }} onClick={() => setUseMockData(!useMockData)}>
-            {useMockData ? '🔧 Using Mock Data' : '🌐 Using DDFPlus API'}
+            {useMockData ? '🔧 Using Mock Data' : '🌐 Using Real API Data'}
           </div>
+        </div>
+        
+        {/* Data Mode Banner */}
+        <div style={{
+          padding: '12px 16px',
+          backgroundColor: useMockData ? '#fef3c7' : '#d1fae5',
+          borderRadius: '8px',
+          border: `2px solid ${useMockData ? '#fbbf24' : '#10b981'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          marginBottom: '16px'
+        }}>
+          <span style={{ fontSize: '18px' }}>
+            {useMockData ? '⚠️' : '✅'}
+          </span>
+          <span style={{ 
+            fontWeight: '600', 
+            color: useMockData ? '#92400e' : '#065f46',
+            fontSize: '14px'
+          }}>
+            {useMockData ? 'DEMO MODE: Showing simulated market data' : 'LIVE MODE: Connected to real commodity markets'}
+          </span>
         </div>
       </div>
 
@@ -1226,7 +1291,20 @@ const CommodityDashboard = () => {
                     </div>
                   </div>
                   
-                  {hasExcelData && (
+                  {hasExcelData && commodity === 'aluminum' && (
+                    <div style={{ 
+                      marginTop: '12px',
+                      paddingTop: '8px',
+                      borderTop: '1px solid #e5e7eb',
+                      fontSize: '11px',
+                      color: '#6b7280'
+                    }}>
+                      <div>Negotiated: {NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE} USD/tonne</div>
+                      <div>~{(NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG * FX_RATES.USD_to_NGN).toFixed(2)} NGN/kg</div>
+                    </div>
+                  )}
+                  
+                  {hasExcelData && commodity !== 'aluminum' && (
                     <div style={{ 
                       marginTop: '12px',
                       paddingTop: '8px',
@@ -1263,20 +1341,24 @@ const CommodityDashboard = () => {
               fontSize: '13px'
             }}>
               <div>
-                <div style={{ color: '#3B82F6', fontWeight: 600, marginBottom: '4px' }}>Blue Line (Excel)</div>
+                <div style={{ color: '#3B82F6', fontWeight: 600, marginBottom: '4px' }}>Blue Line (Our Price)</div>
                 <div style={{ color: '#374151' }}>
-                  Your company's actual purchase prices (Excel data)
+                  {selectedCommodity === 'aluminum' 
+                    ? 'Negotiated raw material price: 2400 USD/tonne' 
+                    : 'Your company\'s actual purchase prices'}
                 </div>
               </div>
               <div>
-                <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (API)</div>
+                <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (Market Price)</div>
                 <div style={{ color: '#374151' }}>
-                  Market prices from commodity exchanges
+                  {useMockData ? 'Simulated market prices' : 'Real-time market prices from commodity exchanges'}
                 </div>
               </div>
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              Note: Only showing data from 2020 onwards. Old dates like "Apr-01" are filtered out.
+              {useMockData 
+                ? 'Note: Using simulated data. Switch to API mode for real market data.' 
+                : 'Note: Connected to DDFPlus API for real commodity data.'}
             </div>
           </div>
         </div>
@@ -1294,7 +1376,10 @@ const CommodityDashboard = () => {
                 {COMMODITY_CONFIG[selectedCommodity]?.name} - Monthly Price Comparison
               </h3>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                All Excel months shown with market price comparison (2020-2025)
+                {selectedCommodity === 'aluminum' 
+                  ? 'Negotiated raw material price vs Market price (2020-2025)' 
+                  : 'Our purchase prices vs Market prices (2020-2025)'}
+                {useMockData && ' • Using simulated market data'}
               </div>
             </div>
             <div style={{ 
@@ -1312,7 +1397,7 @@ const CommodityDashboard = () => {
                 gap: '6px'
               }}>
                 <div style={{ width: '10px', height: '3px', backgroundColor: '#3B82F6' }}></div>
-                <span>Excel: {monthlyComparisonData[selectedCommodity]?.filter(item => item.excelPrice != null).length || 0} months</span>
+                <span>Our Price: {monthlyComparisonData[selectedCommodity]?.filter(item => item.excelPrice != null).length || 0} months</span>
               </div>
               <div style={{ 
                 padding: '6px 12px',
@@ -1325,7 +1410,7 @@ const CommodityDashboard = () => {
                 gap: '6px'
               }}>
                 <div style={{ width: '10px', height: '3px', backgroundColor: '#10B981' }}></div>
-                <span>API: {monthlyComparisonData[selectedCommodity]?.filter(item => item.apiPrice != null).length || 0} months</span>
+                <span>Market: {monthlyComparisonData[selectedCommodity]?.filter(item => item.apiPrice != null).length || 0} months</span>
               </div>
             </div>
           </div>
@@ -1363,7 +1448,7 @@ const CommodityDashboard = () => {
                   <Line
                     type="monotone"
                     dataKey="excelPrice"
-                    name="Our Purchase Price"
+                    name={selectedCommodity === 'aluminum' ? 'Negotiated Price' : 'Our Purchase Price'}
                     stroke={COMMODITY_CONFIG[selectedCommodity]?.excelColor}
                     strokeWidth={3}
                     dot={{ r: 4, fill: COMMODITY_CONFIG[selectedCommodity]?.excelColor }}
@@ -1394,7 +1479,7 @@ const CommodityDashboard = () => {
               }}>
                 <div style={{ textAlign: 'center', color: '#6b7280' }}>
                   <div style={{ fontSize: '16px', marginBottom: '8px' }}>No monthly data available</div>
-                  <div style={{ fontSize: '14px' }}>No recent Excel purchase data found for this commodity (2020-2025)</div>
+                  <div style={{ fontSize: '14px' }}>No recent data found for this commodity (2020-2025)</div>
                 </div>
               </div>
             )}
@@ -1420,7 +1505,7 @@ const CommodityDashboard = () => {
                   Live Commodity Prices
                 </div>
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                  Real-time market prices in NGN/kg (Refreshing every 5 minutes)
+                  {useMockData ? 'Simulated market prices' : 'Real-time market prices'} in NGN/kg (Refreshing every 5 minutes)
                 </div>
               </div>
             </div>
@@ -1625,7 +1710,14 @@ const CommodityDashboard = () => {
                 <strong>Last Updated:</strong> {livePrices.wheat?.lastUpdated || '—'}
               </div>
               <div>
-                <strong>Data Mode:</strong> {useMockData ? 'Mock Data' : 'Real API'}
+                <strong>Data Mode:</strong> 
+                <span style={{ 
+                  fontWeight: 'bold', 
+                  color: useMockData ? '#d97706' : '#059669',
+                  marginLeft: '4px'
+                }}>
+                  {useMockData ? 'Mock Data' : 'Real API'}
+                </span>
               </div>
               <div>
                 <strong>Prices in:</strong> NGN/kg
@@ -1650,7 +1742,8 @@ const CommodityDashboard = () => {
               Month Range Information
             </div>
             <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              Showing Excel data range (2020-2025) and API data availability
+              Showing data range (2020-2025) and API data availability
+              {useMockData && ' • Using simulated market data'}
             </div>
           </div>
         </div>
@@ -1684,12 +1777,15 @@ const CommodityDashboard = () => {
                 </div>
                 
                 <div style={{ marginBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>Excel Range</div>
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>
+                    {commodity === 'aluminum' ? 'Negotiated Price' : 'Excel Range'}
+                  </div>
                   <div style={{ fontSize: '14px', fontWeight: '600', color: '#3B82F6' }}>
                     {firstExcelMonth} - {lastExcelMonth}
                   </div>
                   <div style={{ fontSize: '11px', color: '#9ca3af' }}>
                     {excelMonths.length} months (2020-2025)
+                    {commodity === 'aluminum' && ` • ${NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE} USD/tonne`}
                   </div>
                 </div>
                 
@@ -1707,7 +1803,7 @@ const CommodityDashboard = () => {
                     gap: '4px'
                   }}>
                     <span>{apiMonths.length > 0 ? '✓' : '✗'}</span>
-                    <span>API: {apiMonths.length}/{excelMonths.length}</span>
+                    <span>Market Data: {apiMonths.length}/{excelMonths.length}</span>
                   </span>
                   <span style={{ color: '#6b7280' }}>{COMMODITY_SYMBOLS[commodity]}</span>
                 </div>
