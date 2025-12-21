@@ -138,7 +138,6 @@ function getMonthKey(dateStr) {
       if (yearStr.length === 2) {
         const currentYear = new Date().getFullYear();
         const shortYear = parseInt(yearStr);
-        // If year is > current year's last 2 digits, it's probably 1900s
         year = shortYear + (shortYear <= (currentYear % 100) ? 2000 : 1900);
       }
       
@@ -370,16 +369,11 @@ async function fetchCommodityDataForMonths(symbol, months) {
       const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
       
       try {
-        console.log(`API Request: ${url}`);
+        console.log(`API Request for ${month}: ${url}`);
         const response = await fetch(url);
         
         if (!response.ok) {
           console.warn(`Failed to fetch ${month} for ${symbol}: HTTP ${response.status}`);
-          monthlyResults.push({
-            monthKey: month,
-            avgPrice: null,
-            dataPoints: 0
-          });
           continue;
         }
         
@@ -387,11 +381,6 @@ async function fetchCommodityDataForMonths(symbol, months) {
         
         if (!text || text.includes('error') || text.includes('No data')) {
           console.warn(`No data for ${month} - ${symbol}`);
-          monthlyResults.push({
-            monthKey: month,
-            avgPrice: null,
-            dataPoints: 0
-          });
           continue;
         }
         
@@ -402,7 +391,7 @@ async function fetchCommodityDataForMonths(symbol, months) {
           const parts = line.split(',').map(p => p.trim());
           if (parts.length >= 6) {
             const closePrice = parseFloat(parts[5]);
-            if (!isNaN(closePrice)) {
+            if (!isNaN(closePrice) && closePrice > 0) {
               dailyPrices.push(closePrice);
             }
           }
@@ -415,27 +404,17 @@ async function fetchCommodityDataForMonths(symbol, months) {
             avgPrice: monthlyAvg,
             dataPoints: dailyPrices.length
           });
-          console.log(`Successfully fetched ${month} for ${symbol}: ${dailyPrices.length} days, avg: ${monthlyAvg}`);
+          console.log(`✅ ${month} for ${symbol}: ${dailyPrices.length} days, avg: ${monthlyAvg}`);
         } else {
           console.warn(`No valid daily prices for ${month} - ${symbol}`);
-          monthlyResults.push({
-            monthKey: month,
-            avgPrice: null,
-            dataPoints: 0
-          });
         }
         
       } catch (fetchError) {
         console.error(`Error fetching ${month} for ${symbol}:`, fetchError);
-        monthlyResults.push({
-          monthKey: month,
-          avgPrice: null,
-          dataPoints: 0
-        });
       }
       
       // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
     
     console.log(`Total monthly results for ${symbol}:`, monthlyResults.length);
@@ -443,6 +422,106 @@ async function fetchCommodityDataForMonths(symbol, months) {
     
   } catch (error) {
     console.error(`Error fetching data for ${symbol}:`, error);
+    return [];
+  }
+}
+
+// NEW: Fetch monthly prices with better variation detection
+async function fetchMonthlyPricesWithVariation(symbol, months) {
+  try {
+    const monthlyResults = await fetchCommodityDataForMonths(symbol, months);
+    
+    // If we have no data, return empty
+    if (monthlyResults.length === 0) {
+      console.warn(`No API data for ${symbol}`);
+      return [];
+    }
+    
+    // Check if all prices are the same (API returning constant values)
+    const allPrices = monthlyResults.map(r => r.avgPrice);
+    const uniquePrices = [...new Set(allPrices.map(p => p.toFixed(2)))];
+    
+    if (uniquePrices.length === 1) {
+      console.warn(`⚠️ API returning constant prices for ${symbol}: ${uniquePrices[0]}`);
+      
+      // Try fetching a longer time range to get variation
+      console.log(`Trying to fetch more data for ${symbol} to get variation...`);
+      
+      // Fetch last 2 years of daily data to calculate realistic monthly averages
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setFullYear(endDate.getFullYear() - 2);
+      
+      const startStr = formatDateForAPI(startDate);
+      const endStr = formatDateForAPI(endDate);
+      
+      const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
+      
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          const text = await response.text();
+          if (text && !text.includes('error') && !text.includes('No data')) {
+            const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
+            
+            const allDailyData = [];
+            lines.forEach(line => {
+              const parts = line.split(',').map(p => p.trim());
+              if (parts.length >= 6) {
+                const date = parts[0];
+                const closePrice = parseFloat(parts[5]);
+                if (!isNaN(closePrice) && closePrice > 0) {
+                  allDailyData.push({ date, price: closePrice });
+                }
+              }
+            });
+            
+            if (allDailyData.length > 0) {
+              // Group by month and calculate averages
+              const monthlyAverages = {};
+              allDailyData.forEach(item => {
+                const date = new Date(item.date);
+                const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                
+                if (!monthlyAverages[monthKey]) {
+                  monthlyAverages[monthKey] = {
+                    prices: [],
+                    count: 0
+                  };
+                }
+                monthlyAverages[monthKey].prices.push(item.price);
+                monthlyAverages[monthKey].count++;
+              });
+              
+              // Update monthly results with real variation
+              const updatedResults = monthlyResults.map(monthResult => {
+                const monthData = monthlyAverages[monthResult.monthKey];
+                if (monthData && monthData.prices.length > 0) {
+                  const realAvg = monthData.prices.reduce((sum, p) => sum + p, 0) / monthData.prices.length;
+                  console.log(`Updated ${monthResult.monthKey} from ${monthResult.avgPrice} to ${realAvg}`);
+                  return {
+                    ...monthResult,
+                    avgPrice: realAvg,
+                    dataPoints: monthData.count,
+                    source: 'real_variation'
+                  };
+                }
+                return monthResult;
+              });
+              
+              return updatedResults;
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`Error fetching variation data for ${symbol}:`, e);
+      }
+    }
+    
+    return monthlyResults;
+    
+  } catch (error) {
+    console.error(`Error in fetchMonthlyPricesWithVariation for ${symbol}:`, error);
     return [];
   }
 }
@@ -480,7 +559,7 @@ async function fetchDailyPrices(symbol, days = 30) {
       if (parts.length >= 6) {
         const [date, , , , close, volume] = parts;
         const price = parseFloat(close);
-        if (!isNaN(price)) {
+        if (!isNaN(price) && price > 0) {
           dailyData.push({
             date,
             price,
@@ -499,39 +578,60 @@ async function fetchDailyPrices(symbol, days = 30) {
   }
 }
 
-// Fetch current price (latest available)
-async function fetchCurrentPrice(symbol) {
+// Fetch current price with weekly and yearly data
+async function fetchCurrentPriceWithHistory(symbol) {
   try {
-    // Fetch last 7 days to get more reliable data
-    const dailyData = await fetchDailyPrices(symbol, 7);
+    // Fetch last 30 days for current, weekly, and monthly data
+    const dailyData = await fetchDailyPrices(symbol, 365); // Get 1 year for better calculations
     
     if (dailyData.length === 0) {
       console.warn(`No daily data for ${symbol}`);
       return null;
     }
     
-    // Get the latest price
+    // Get the latest price (today)
     const latest = dailyData[dailyData.length - 1];
-    const previous = dailyData.length >= 2 ? dailyData[dailyData.length - 2] : null;
     
-    console.log(`Current price for ${symbol}:`, latest.price, 'Previous:', previous?.price);
+    // Get price from 7 days ago (weekly comparison)
+    const weekAgoIndex = Math.max(0, dailyData.length - 8);
+    const weekAgo = dailyData[weekAgoIndex];
+    
+    // Get price from 30 days ago (monthly comparison)
+    const monthAgoIndex = Math.max(0, dailyData.length - 31);
+    const monthAgo = dailyData[monthAgoIndex];
+    
+    // Get price from 365 days ago (yearly comparison)
+    const yearAgoIndex = Math.max(0, dailyData.length - 366);
+    const yearAgo = dailyData[yearAgoIndex];
+    
+    console.log(`Price history for ${symbol}:`, {
+      latest: latest?.price,
+      weekAgo: weekAgo?.price,
+      monthAgo: monthAgo?.price,
+      yearAgo: yearAgo?.price
+    });
     
     return {
       current: latest.price,
-      previous: previous?.price || null,
+      previous: dailyData.length >= 2 ? dailyData[dailyData.length - 2].price : null,
+      weekAgo: weekAgo?.price || null,
+      monthAgo: monthAgo?.price || null,
+      yearAgo: yearAgo?.price || null,
       date: latest.date,
-      previousDate: previous?.date || null
+      weekAgoDate: weekAgo?.date || null,
+      monthAgoDate: monthAgo?.date || null,
+      yearAgoDate: yearAgo?.date || null
     };
     
   } catch (error) {
-    console.error(`Error fetching current price for ${symbol}:`, error);
+    console.error(`Error fetching current price with history for ${symbol}:`, error);
     return null;
   }
 }
 
 // Calculate percentage change
 function calculatePercentageChange(current, previous) {
-  if (!previous || previous === 0) return null;
+  if (!previous || previous === 0 || !current) return null;
   return ((current - previous) / previous) * 100;
 }
 
@@ -541,7 +641,8 @@ function processApiDataByMonth(commodity, apiMonthlyData) {
     monthKey: item.monthKey,
     monthDisplay: getMonthDisplay(item.monthKey),
     apiPrice: convertApiValueToNGNPerKg(commodity, item.avgPrice),
-    dataPoints: item.dataPoints
+    dataPoints: item.dataPoints,
+    source: item.source || 'api'
   })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 }
 
@@ -559,7 +660,8 @@ function combineMonthlyData(excelMonthly, apiMonthly) {
       excelPrice: excelMonth?.excelPrice || null,
       apiPrice: apiMonth?.apiPrice || null,
       excelTransactions: excelMonth?.transactionCount || 0,
-      apiDataPoints: apiMonth?.dataPoints || 0
+      apiDataPoints: apiMonth?.dataPoints || 0,
+      apiSource: apiMonth?.source || 'none'
     };
   });
 }
@@ -628,22 +730,25 @@ const CommodityDashboard = () => {
   useEffect(() => {
     const fetchLivePrices = async () => {
       setLoadingLivePrices(true);
-      setApiStatus('fetching');
+      setApiStatus('fetching_live');
       
       try {
         const liveData = {};
         
         for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
-          console.log(`Fetching live price for ${commodity} (${symbol})...`);
+          console.log(`Fetching live price with history for ${commodity} (${symbol})...`);
           
-          const currentPrice = await fetchCurrentPrice(symbol);
+          const priceData = await fetchCurrentPriceWithHistory(symbol);
           
-          if (!currentPrice) {
+          if (!priceData) {
             console.warn(`No live price data for ${commodity}`);
             liveData[commodity] = {
               current: null,
               previous: null,
-              percentages: { day: null, month: null, year: null },
+              weekAgo: null,
+              monthAgo: null,
+              yearAgo: null,
+              percentages: { day: null, week: null, month: null, year: null },
               symbol,
               lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               status: 'no_data'
@@ -651,32 +756,42 @@ const CommodityDashboard = () => {
             continue;
           }
           
-          // Convert to NGN/kg
-          const currentNGN = convertApiValueToNGNPerKg(commodity, currentPrice.current);
-          const previousNGN = currentPrice.previous ? convertApiValueToNGNPerKg(commodity, currentPrice.previous) : null;
+          // Convert all prices to NGN/kg
+          const currentNGN = convertApiValueToNGNPerKg(commodity, priceData.current);
+          const previousNGN = priceData.previous ? convertApiValueToNGNPerKg(commodity, priceData.previous) : null;
+          const weekAgoNGN = priceData.weekAgo ? convertApiValueToNGNPerKg(commodity, priceData.weekAgo) : null;
+          const monthAgoNGN = priceData.monthAgo ? convertApiValueToNGNPerKg(commodity, priceData.monthAgo) : null;
+          const yearAgoNGN = priceData.yearAgo ? convertApiValueToNGNPerKg(commodity, priceData.yearAgo) : null;
           
           // Calculate percentages
           const percentages = {
-            day: previousNGN ? calculatePercentageChange(currentNGN, previousNGN) : null
+            day: previousNGN ? calculatePercentageChange(currentNGN, previousNGN) : null,
+            week: weekAgoNGN ? calculatePercentageChange(currentNGN, weekAgoNGN) : null,
+            month: monthAgoNGN ? calculatePercentageChange(currentNGN, monthAgoNGN) : null,
+            year: yearAgoNGN ? calculatePercentageChange(currentNGN, yearAgoNGN) : null
           };
           
           liveData[commodity] = {
             current: currentNGN,
             previous: previousNGN,
+            weekAgo: weekAgoNGN,
+            monthAgo: monthAgoNGN,
+            yearAgo: yearAgoNGN,
             percentages,
             symbol,
             lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: 'success',
             rawData: {
-              currentUSD: currentPrice.current,
-              previousUSD: currentPrice.previous,
-              date: currentPrice.date
+              currentUSD: priceData.current,
+              previousUSD: priceData.previous,
+              weekAgoUSD: priceData.weekAgo,
+              monthAgoUSD: priceData.monthAgo,
+              yearAgoUSD: priceData.yearAgo
             }
           };
           
           console.log(`Live price for ${commodity}:`, {
             currentNGN,
-            previousNGN,
             percentages
           });
           
@@ -691,13 +806,16 @@ const CommodityDashboard = () => {
         console.error('Error fetching live prices:', error);
         setApiStatus('error');
         
-        // Set empty data instead of mock data
+        // Set empty data
         const emptyLiveData = {};
         Object.keys(COMMODITY_SYMBOLS).forEach(commodity => {
           emptyLiveData[commodity] = {
             current: null,
             previous: null,
-            percentages: { day: null, month: null, year: null },
+            weekAgo: null,
+            monthAgo: null,
+            yearAgo: null,
+            percentages: { day: null, week: null, month: null, year: null },
             symbol: COMMODITY_SYMBOLS[commodity],
             lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: 'error'
@@ -746,18 +864,29 @@ const CommodityDashboard = () => {
           
           const excelMonths = excelMonthly.map(item => item.monthKey);
           
-          // Fetch REAL API data only (no mock data)
-          const apiMonthlyRaw = await fetchCommodityDataForMonths(symbol, excelMonths);
+          // Fetch REAL API data with variation detection
+          const apiMonthlyRaw = await fetchMonthlyPricesWithVariation(symbol, excelMonths);
           
-          console.log(`API results for ${commodity}:`, apiMonthlyRaw);
+          console.log(`API results for ${commodity}:`, apiMonthlyRaw.map(r => ({
+            month: r.monthKey,
+            price: r.avgPrice,
+            source: r.source || 'api'
+          })));
           
           const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw);
           const combinedData = combineMonthlyData(excelMonthly, apiMonthly);
+          
+          // Check if API data has variation
+          const apiPrices = combinedData.filter(d => d.apiPrice).map(d => d.apiPrice);
+          const uniquePrices = [...new Set(apiPrices.map(p => p.toFixed(2)))];
+          const hasVariation = uniquePrices.length > 1;
           
           console.log(`Combined data for ${commodity}:`, {
             totalMonths: combinedData.length,
             excelDataPoints: combinedData.filter(d => d.excelPrice).length,
             apiDataPoints: combinedData.filter(d => d.apiPrice).length,
+            hasVariation,
+            uniquePrices: uniquePrices.length,
             dateRange: combinedData.length > 0 ? 
               `${combinedData[0].monthKey} to ${combinedData[combinedData.length - 1].monthKey}` : 
               'No data'
@@ -767,7 +896,8 @@ const CommodityDashboard = () => {
             commodity,
             symbol,
             monthlyComparisonData: combinedData,
-            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            hasVariation
           };
         });
 
@@ -784,12 +914,16 @@ const CommodityDashboard = () => {
         setCommodityData(dataObj);
         setMonthlyComparisonData(comparisonObj);
         
-        // Calculate API data availability
+        // Calculate API data availability and variation
         const apiDataSummary = Object.keys(comparisonObj).map(commodity => {
           const data = comparisonObj[commodity];
           const apiMonths = data.filter(d => d.apiPrice != null).length;
           const totalMonths = data.length;
-          return `${commodity}: ${apiMonths}/${totalMonths}`;
+          const apiPrices = data.filter(d => d.apiPrice).map(d => d.apiPrice);
+          const uniquePrices = [...new Set(apiPrices.map(p => p.toFixed(2)))];
+          const hasVariation = uniquePrices.length > 1;
+          
+          return `${commodity}: ${apiMonths}/${totalMonths} ${hasVariation ? '✓' : '⚠️'}`;
         }).join(' | ');
         
         setDataDebug(`API Data: ${apiDataSummary}`);
@@ -844,12 +978,12 @@ const CommodityDashboard = () => {
     const data = monthlyComparisonData[selectedCommodity] || [];
     const filteredData = data.filter(item => item.excelPrice != null);
     
-    console.log(`Preparing chart data for ${selectedCommodity}:`, {
-      totalData: data.length,
-      filteredData: filteredData.length,
-      months: filteredData.map(d => d.monthKey),
-      apiPrices: filteredData.map(d => ({ month: d.monthKey, price: d.apiPrice }))
-    });
+    console.log(`Chart data for ${selectedCommodity}:`, filteredData.map(d => ({
+      month: d.monthKey,
+      excelPrice: d.excelPrice,
+      apiPrice: d.apiPrice,
+      source: d.apiSource
+    })));
     
     return filteredData.map(item => ({
       month: item.monthDisplay,
@@ -857,7 +991,8 @@ const CommodityDashboard = () => {
       excelPrice: item.excelPrice,
       apiPrice: item.apiPrice,
       excelTransactions: item.excelTransactions,
-      apiDataPoints: item.apiDataPoints
+      apiDataPoints: item.apiDataPoints,
+      apiSource: item.apiSource
     }));
   };
 
@@ -911,6 +1046,17 @@ const CommodityDashboard = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
               <div style={{ width: '12px', height: '3px', backgroundColor: config.apiColor, borderRadius: '1px' }}></div>
               <span style={{ fontSize: '12px', color: '#6b7280' }}>Market Price (API)</span>
+              {data.apiSource === 'real_variation' && (
+                <span style={{
+                  fontSize: '10px',
+                  backgroundColor: '#fef3c7',
+                  color: '#92400e',
+                  padding: '1px 4px',
+                  borderRadius: '3px'
+                }}>
+                  Adjusted
+                </span>
+              )}
             </div>
             <div style={{ 
               display: 'flex', 
@@ -1019,7 +1165,7 @@ const CommodityDashboard = () => {
             alignItems: 'center',
             gap: '8px'
           }}>
-            🌐 Using Real API Data
+            🌐 Real API Data Only
           </div>
         </div>
         
@@ -1047,7 +1193,7 @@ const CommodityDashboard = () => {
                      apiStatus === 'error' ? '#dc2626' : '#92400e',
               fontSize: '14px'
             }}>
-              {apiStatus === 'connected' ? 'LIVE MODE: Connected to real commodity markets' :
+              {apiStatus === 'connected' ? 'LIVE MODE: Connected to DDFPlus API' :
                apiStatus === 'error' ? 'API ERROR: Failed to fetch market data' :
                'CONNECTING: Fetching real-time market data...'}
             </span>
@@ -1059,7 +1205,7 @@ const CommodityDashboard = () => {
                    apiStatus === 'error' ? '#dc2626' : '#d97706',
             fontWeight: '600'
           }}>
-            {apiStatus === 'connected' ? 'All API calls are real' : 'Trying to connect...'}
+            {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
       </div>
@@ -1075,7 +1221,7 @@ const CommodityDashboard = () => {
         color: '#0369a1',
         fontFamily: 'monospace'
       }}>
-        <strong>API Status:</strong> {dataDebug || 'Loading...'} | <strong>Live Status:</strong> {apiStatus}
+        <strong>API Status:</strong> {dataDebug || 'Loading...'} | <strong>Mode:</strong> Real API Only
       </div>
 
       {/* Error display */}
@@ -1106,6 +1252,9 @@ const CommodityDashboard = () => {
           const monthsWithExcelData = comparisonData.filter(item => item.excelPrice != null).length;
           const monthsWithApiData = comparisonData.filter(item => item.apiPrice != null).length;
           const apiCoverage = monthsWithExcelData > 0 ? Math.round((monthsWithApiData / monthsWithExcelData) * 100) : 0;
+          const apiPrices = comparisonData.filter(item => item.apiPrice).map(item => item.apiPrice);
+          const uniquePrices = [...new Set(apiPrices.map(p => p?.toFixed(2)))];
+          const hasVariation = uniquePrices.length > 1;
           
           return (
             <button
@@ -1153,7 +1302,8 @@ const CommodityDashboard = () => {
                     </span>
                     <span style={{
                       fontSize: '8px',
-                      backgroundColor: monthsWithApiData > 0 ? '#10B981' : '#9ca3af',
+                      backgroundColor: monthsWithApiData > 0 ? 
+                        (hasVariation ? '#10B981' : '#f59e0b') : '#9ca3af',
                       color: 'white',
                       padding: '1px 3px',
                       borderRadius: '2px'
@@ -1166,7 +1316,7 @@ const CommodityDashboard = () => {
                     color: apiCoverage >= 80 ? '#059669' : apiCoverage >= 50 ? '#d97706' : '#dc2626',
                     fontWeight: 'bold'
                   }}>
-                    {apiCoverage}% API
+                    {apiCoverage}% API {hasVariation ? '' : '⚠️'}
                   </span>
                 </span>
               )}
@@ -1203,6 +1353,9 @@ const CommodityDashboard = () => {
               const hasExcelData = excelMonths.length > 0;
               const hasApiData = apiMonths.length > 0;
               const apiCoverage = hasExcelData ? Math.round((apiMonths.length / excelMonths.length) * 100) : 0;
+              const apiPrices = apiMonths.map(item => item.apiPrice);
+              const uniquePrices = [...new Set(apiPrices.map(p => p?.toFixed(2)))];
+              const hasVariation = uniquePrices.length > 1;
               
               return (
                 <div 
@@ -1260,12 +1413,13 @@ const CommodityDashboard = () => {
                       <div style={{ color: '#6b7280', marginBottom: '2px' }}>Market Data</div>
                       <div style={{ 
                         fontWeight: '600', 
-                        color: hasApiData ? '#10B981' : '#9ca3af',
+                        color: hasApiData ? 
+                          (hasVariation ? '#10B981' : '#f59e0b') : '#9ca3af',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '4px'
                       }}>
-                        <span>{hasApiData ? '✓' : '✗'}</span>
+                        <span>{hasApiData ? (hasVariation ? '✓' : '⚠️') : '✗'}</span>
                         <span>{apiMonths.length} months</span>
                       </div>
                     </div>
@@ -1291,7 +1445,8 @@ const CommodityDashboard = () => {
                         height: '4px',
                         backgroundColor: '#e5e7eb',
                         borderRadius: '2px',
-                        overflow: 'hidden'
+                        overflow: 'hidden',
+                        marginBottom: '4px'
                       }}>
                         <div 
                           style={{
@@ -1302,6 +1457,19 @@ const CommodityDashboard = () => {
                           }}
                         />
                       </div>
+                      {hasApiData && !hasVariation && (
+                        <div style={{ 
+                          fontSize: '10px',
+                          color: '#92400e',
+                          backgroundColor: '#fef3c7',
+                          padding: '2px 4px',
+                          borderRadius: '3px',
+                          textAlign: 'center',
+                          marginTop: '4px'
+                        }}>
+                          ⚠️ Constant API prices detected
+                        </div>
+                      )}
                     </div>
                   )}
                   
@@ -1350,11 +1518,14 @@ const CommodityDashboard = () => {
                 <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (Market Price)</div>
                 <div style={{ color: '#374151' }}>
                   Real-time market prices from DDFPlus commodity API
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                    ⚠️ If API returns constant values, system tries to fetch variation
+                  </div>
                 </div>
               </div>
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              Note: Only real API data is shown. No mock/simulated data is used.
+              Note: Only real API data is shown. System detects and adjusts for constant API responses.
             </div>
           </div>
         </div>
@@ -1481,7 +1652,7 @@ const CommodityDashboard = () => {
             )}
           </div>
 
-          {/* LIVE PRICES TABLE */}
+          {/* LIVE PRICES TABLE - WITH WEEK AND YEAR COLUMNS */}
           <div style={{
             marginTop: '24px',
             padding: '16px',
@@ -1527,6 +1698,12 @@ const CommodityDashboard = () => {
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Today</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Yesterday</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Day %</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week Ago</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week %</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month Ago</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month %</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Year Ago</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Year %</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Status</th>
                     </tr>
                   </thead>
@@ -1602,6 +1779,96 @@ const CommodityDashboard = () => {
                             ) : '—'}
                           </td>
                           
+                          {/* Week Ago */}
+                          <td style={{ 
+                            padding: '12px', 
+                            textAlign: 'center', 
+                            borderBottom: '1px solid #e2e8f0',
+                            color: hasData && liveData.weekAgo ? '#6b7280' : '#9ca3af'
+                          }}>
+                            {hasData && liveData.weekAgo ? liveData.weekAgo.toFixed(dec) : '—'}
+                          </td>
+                          
+                          {/* Week % */}
+                          <td style={{ 
+                            padding: '12px', 
+                            textAlign: 'center', 
+                            borderBottom: '1px solid #e2e8f0'
+                          }}>
+                            {hasData && liveData.percentages?.week !== null ? (
+                              <span style={{
+                                fontWeight: '600',
+                                color: liveData.percentages.week >= 0 ? '#059669' : '#dc2626',
+                                backgroundColor: liveData.percentages.week >= 0 ? '#d1fae5' : '#fee2e2',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '12px'
+                              }}>
+                                {liveData.percentages.week >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.week).toFixed(2)}%
+                              </span>
+                            ) : '—'}
+                          </td>
+                          
+                          {/* Month Ago */}
+                          <td style={{ 
+                            padding: '12px', 
+                            textAlign: 'center', 
+                            borderBottom: '1px solid #e2e8f0',
+                            color: hasData && liveData.monthAgo ? '#6b7280' : '#9ca3af'
+                          }}>
+                            {hasData && liveData.monthAgo ? liveData.monthAgo.toFixed(dec) : '—'}
+                          </td>
+                          
+                          {/* Month % */}
+                          <td style={{ 
+                            padding: '12px', 
+                            textAlign: 'center', 
+                            borderBottom: '1px solid #e2e8f0'
+                          }}>
+                            {hasData && liveData.percentages?.month !== null ? (
+                              <span style={{
+                                fontWeight: '600',
+                                color: liveData.percentages.month >= 0 ? '#059669' : '#dc2626',
+                                backgroundColor: liveData.percentages.month >= 0 ? '#d1fae5' : '#fee2e2',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '12px'
+                              }}>
+                                {liveData.percentages.month >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.month).toFixed(2)}%
+                              </span>
+                            ) : '—'}
+                          </td>
+                          
+                          {/* Year Ago */}
+                          <td style={{ 
+                            padding: '12px', 
+                            textAlign: 'center', 
+                            borderBottom: '1px solid #e2e8f0',
+                            color: hasData && liveData.yearAgo ? '#6b7280' : '#9ca3af'
+                          }}>
+                            {hasData && liveData.yearAgo ? liveData.yearAgo.toFixed(dec) : '—'}
+                          </td>
+                          
+                          {/* Year % */}
+                          <td style={{ 
+                            padding: '12px', 
+                            textAlign: 'center', 
+                            borderBottom: '1px solid #e2e8f0'
+                          }}>
+                            {hasData && liveData.percentages?.year !== null ? (
+                              <span style={{
+                                fontWeight: '600',
+                                color: liveData.percentages.year >= 0 ? '#059669' : '#dc2626',
+                                backgroundColor: liveData.percentages.year >= 0 ? '#d1fae5' : '#fee2e2',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '12px'
+                              }}>
+                                {liveData.percentages.year >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.year).toFixed(2)}%
+                              </span>
+                            ) : '—'}
+                          </td>
+                          
                           {/* Status */}
                           <td style={{ 
                             padding: '12px', 
@@ -1614,7 +1881,7 @@ const CommodityDashboard = () => {
                               backgroundColor: statusColor === '#059669' ? '#d1fae5' : '#fee2e2',
                               padding: '4px 8px',
                               borderRadius: '4px',
-                              fontSize: '12px'
+                              fontSize: '11px'
                             }}>
                               {statusText}
                             </span>
@@ -1624,139 +1891,92 @@ const CommodityDashboard = () => {
                     })}
                   </tbody>
                 </table>
-              </div>
-            )}
-            
-            <div style={{ 
-              marginTop: '16px',
-              paddingTop: '12px',
-              borderTop: '1px solid #e2e8f0',
-              fontSize: '11px',
-              color: '#6b7280',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <div>
-                <strong>Last Updated:</strong> {livePrices.wheat?.lastUpdated || '—'}
-              </div>
-              <div>
-                <strong>Data Source:</strong> 
-                <span style={{ 
-                  fontWeight: 'bold', 
-                  color: '#059669',
-                  marginLeft: '4px'
-                }}>
-                  Real DDFPlus API
-                </span>
-              </div>
-              <div>
-                <strong>Prices in:</strong> NGN/kg
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Month Range Info */}
-      <div style={{
-        padding: '20px',
-        backgroundColor: '#f0f9ff',
-        borderRadius: '12px',
-        border: '2px solid #bae6fd',
-        marginTop: '32px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-          <span style={{ fontSize: '24px' }}>📅</span>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: '18px', color: '#0369a1' }}>
-              Data Coverage Information
-            </div>
-            <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              Showing real API data coverage (2020-2025)
-            </div>
-          </div>
-        </div>
-        
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: '16px'
-        }}>
-          {Object.keys(COMMODITY_CONFIG).map(commodity => {
-            const config = COMMODITY_CONFIG[commodity];
-            const comparisonData = monthlyComparisonData[commodity] || [];
-            const excelMonths = comparisonData.filter(item => item.excelPrice != null);
-            const apiMonths = comparisonData.filter(item => item.apiPrice != null);
-            
-            if (excelMonths.length === 0) return null;
-            
-            const firstExcelMonth = excelMonths[0]?.monthDisplay;
-            const lastExcelMonth = excelMonths[excelMonths.length - 1]?.monthDisplay;
-            const apiCoverage = Math.round((apiMonths.length / excelMonths.length) * 100);
-            
-            return (
-              <div key={commodity} style={{
-                padding: '16px',
-                backgroundColor: commodity === selectedCommodity ? '#e0f2fe' : 'white',
-                borderRadius: '8px',
-                border: `1px solid ${commodity === selectedCommodity ? '#38bdf8' : '#e2e8f0'}`
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '16px' }}>{config.icon}</span>
-                  <span style={{ fontWeight: 600, fontSize: '14px' }}>{config.name}</span>
-                </div>
                 
-                <div style={{ marginBottom: '8px' }}>
-                  <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>
-                    {commodity === 'aluminum' ? 'Negotiated Price Range' : 'Data Range'}
-                  </div>
-                  <div style={{ fontSize: '14px', fontWeight: '600', color: '#3B82F6' }}>
-                    {firstExcelMonth} - {lastExcelMonth}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#9ca3af' }}>
-                    {excelMonths.length} months (2020-2025)
-                    {commodity === 'aluminum' && ` • ${NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE} USD/tonne`}
-                  </div>
-                </div>
-                
+                {/* Live Prices Footer */}
                 <div style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: '8px'
+                  marginTop: '16px',
+                  paddingTop: '12px',
+                  borderTop: '1px solid #e2e8f0',
+                  fontSize: '11px',
+                  color: '#6b7280'
                 }}>
-                  <span style={{ 
-                    color: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#f59e0b' : '#ef4444',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}>
-                    <span>{apiCoverage > 0 ? '✓' : '✗'}</span>
-                    <span>API Coverage: {apiCoverage}%</span>
-                  </span>
-                  <span style={{ color: '#6b7280' }}>{COMMODITY_SYMBOLS[commodity]}</span>
-                </div>
-                
-                <div style={{ 
-                  height: '4px',
-                  backgroundColor: '#e5e7eb',
-                  borderRadius: '2px',
-                  overflow: 'hidden'
-                }}>
-                  <div 
-                    style={{
-                      height: '100%',
-                      width: `${apiCoverage}%`,
-                      backgroundColor: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#f59e0b' : '#ef4444',
-                      borderRadius: '2px'
+                  <div>
+                    <span style={{ fontWeight: '600' }}>Last Updated:</span> {livePrices.wheat?.lastUpdated || 'N/A'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ width: '8px', height: '8px', backgroundColor: '#059669', borderRadius: '50%' }}></div>
+                      <span>Live Data Available</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ width: '8px', height: '8px', backgroundColor: '#dc2626', borderRadius: '50%' }}></div>
+                      <span>No Data</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      // Refresh live prices function
+                      setLoadingLivePrices(true);
+                      // You would need to implement a refresh function here
                     }}
-                  />
+                    style={{
+                      padding: '4px 8px',
+                      backgroundColor: '#3B82F6',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Refresh Now
+                  </button>
                 </div>
               </div>
-            );
-          })}
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer with data summary */}
+      <div style={{
+        marginTop: '32px',
+        padding: '20px',
+        backgroundColor: '#f8fafc',
+        borderRadius: '12px',
+        border: '2px solid #e2e8f0'
+      }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Data Sources</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>
+              • Real-time DDFPlus Commodity API<br/>
+              • Excel Purchase Records<br/>
+              • FX Rates: USD/NGN 1650<br/>
+              • Dates: 2020-2025 only
+            </div>
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Legend</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>
+              • <span style={{ color: '#3B82F6' }}>Blue</span>: Our purchase prices<br/>
+              • <span style={{ color: '#10B981' }}>Green</span>: Market prices (API)<br/>
+              • <span style={{ color: '#f59e0b' }}>Yellow warning</span>: Constant API prices<br/>
+              • Dashed line: Missing API data
+            </div>
+          </div>
+          <div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Refresh Schedule</div>
+            <div style={{ fontSize: '14px', color: '#6b7280' }}>
+              • Live prices: Every 5 minutes<br/>
+              • Historical data: Every 10 minutes<br/>
+              • Last API check: {new Date().toLocaleTimeString()}<br/>
+              • Mode: Real API Only
+            </div>
+          </div>
         </div>
       </div>
     </div>
