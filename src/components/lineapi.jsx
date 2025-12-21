@@ -341,6 +341,7 @@ function processExcelDataByMonth(commodity) {
 }
 
 // REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month
+// REAL API FUNCTION for DDFPlus - fetch daily data and aggregate by month
 async function fetchCommodityDataForMonths(symbol, months) {
   try {
     const monthlyResults = [];
@@ -387,26 +388,55 @@ async function fetchCommodityDataForMonths(symbol, months) {
         const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
         
         const dailyPrices = [];
-        lines.forEach(line => {
+        console.log(`Raw CSV lines for ${month}:`, lines.length);
+        
+        lines.forEach((line, index) => {
           const parts = line.split(',').map(p => p.trim());
+          
+          // Log first few lines to debug
+          if (index < 3) {
+            console.log(`Line ${index} for ${month}:`, parts);
+          }
+          
+          // CSV format: Symbol,Date,Open,High,Low,Close,Volume,OpenInterest
           if (parts.length >= 6) {
-            const closePrice = parseFloat(parts[5]);
-            if (!isNaN(closePrice) && closePrice > 0) {
-              dailyPrices.push(closePrice);
+            const dateStr = parts[1]; // Date is at index 1
+            const closePrice = parseFloat(parts[5]); // Close is at index 5
+            
+            // Verify this date belongs to the requested month
+            const date = new Date(dateStr);
+            const lineMonthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            if (lineMonthKey === month && !isNaN(closePrice) && closePrice > 0) {
+              dailyPrices.push({
+                date: dateStr,
+                price: closePrice
+              });
+              
+              if (index < 3) {
+                console.log(`  Added: ${dateStr} - ${closePrice}`);
+              }
             }
           }
         });
         
         if (dailyPrices.length > 0) {
-          const monthlyAvg = dailyPrices.reduce((sum, price) => sum + price, 0) / dailyPrices.length;
+          // Calculate monthly average
+          const sum = dailyPrices.reduce((sum, day) => sum + day.price, 0);
+          const monthlyAvg = sum / dailyPrices.length;
+          
           monthlyResults.push({
             monthKey: month,
             avgPrice: monthlyAvg,
-            dataPoints: dailyPrices.length
+            dataPoints: dailyPrices.length,
+            sampleDates: dailyPrices.slice(0, 3).map(d => d.date) // For debugging
           });
-          console.log(`✅ ${month} for ${symbol}: ${dailyPrices.length} days, avg: ${monthlyAvg}`);
+          
+          console.log(`✅ ${month} for ${symbol}: ${dailyPrices.length} trading days, avg: ${monthlyAvg.toFixed(2)}`);
+          console.log(`   Sample prices: ${dailyPrices.slice(0, 3).map(d => d.price.toFixed(2)).join(', ')}...`);
         } else {
           console.warn(`No valid daily prices for ${month} - ${symbol}`);
+          console.log(`   Raw text sample: ${text.substring(0, 200)}...`);
         }
         
       } catch (fetchError) {
@@ -417,7 +447,12 @@ async function fetchCommodityDataForMonths(symbol, months) {
       await new Promise(resolve => setTimeout(resolve, 150));
     }
     
-    console.log(`Total monthly results for ${symbol}:`, monthlyResults.length);
+    console.log(`Total monthly results for ${symbol}:`, monthlyResults.map(r => ({
+      month: r.monthKey,
+      avg: r.avgPrice?.toFixed(2),
+      days: r.dataPoints
+    })));
+    
     return monthlyResults;
     
   } catch (error) {
@@ -527,6 +562,7 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
 }
 
 // Fetch daily prices for a commodity
+// Fetch daily prices for a commodity
 async function fetchDailyPrices(symbol, days = 30) {
   try {
     const endDate = new Date();
@@ -557,13 +593,18 @@ async function fetchDailyPrices(symbol, days = 30) {
     lines.forEach(line => {
       const parts = line.split(',').map(p => p.trim());
       if (parts.length >= 6) {
-        const [date, , , , close, volume] = parts;
-        const price = parseFloat(close);
-        if (!isNaN(price) && price > 0) {
+        // CSV format: Symbol,Date,Open,High,Low,Close,Volume,OpenInterest
+        const symbol = parts[0];
+        const date = parts[1]; // Date is at index 1
+        const closePrice = parseFloat(parts[5]); // Close is at index 5
+        const volume = parts.length > 6 ? parseInt(parts[6]) : 0;
+        
+        if (!isNaN(closePrice) && closePrice > 0) {
           dailyData.push({
             date,
-            price,
-            volume: parseInt(volume) || 0
+            price: closePrice,
+            volume: volume || 0,
+            symbol: symbol
           });
         }
       }
