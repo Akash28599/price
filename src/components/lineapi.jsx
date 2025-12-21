@@ -1519,7 +1519,7 @@ const CommodityDashboard = () => {
                           textAlign: 'center',
                           marginTop: '4px'
                         }}>
-                          ⚠️ Constant API prices detected
+                          ⚠️ Constant API prices 
                         </div>
                       )}
                     </div>
@@ -1551,7 +1551,7 @@ const CommodityDashboard = () => {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <span style={{ fontSize: '20px' }}>📊</span>
-              <span style={{ fontWeight: 600, fontSize: '16px', color: '#0369a1' }}>How It Works</span>
+              <span style={{ fontWeight: 600, fontSize: '16px', color: '#0369a1' }}>Details</span>
             </div>
             <div style={{
               display: 'grid',
@@ -1563,15 +1563,15 @@ const CommodityDashboard = () => {
                 <div style={{ color: '#374151' }}>
                   {selectedCommodity === 'aluminum' 
                     ? 'Negotiated raw material price: 2400 USD/tonne' 
-                    : 'Your company\'s actual purchase prices from Excel'}
+                    : 'Excel Price'}
                 </div>
               </div>
               <div>
                 <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (Market Price)</div>
                 <div style={{ color: '#374151' }}>
-                  Real-time market prices from DDFPlus commodity API
+                  API prices
                   <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                    ⚠️ If API returns constant values, system tries to fetch variation
+                    ⚠️ API failed
                   </div>
                 </div>
               </div>
