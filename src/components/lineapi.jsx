@@ -28,6 +28,8 @@ const FX_RATES = {
   USD_to_NGN: 1460,
   GHS_to_USD: 0.087,
   USD_to_GHS: 11.48,
+  MYR_to_USD: 0.21,  // Malaysian Ringgit to USD (approximate, check current rate)
+  USD_to_MYR: 4.76   // USD to Malaysian Ringgit
 };
 
 // Conversion factors
@@ -196,25 +198,34 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
 
   switch(commodity) {
     case 'wheat':
+      // ZW*1: returns US cents per bushel ✓
       const usdPerBushel = value / 100;
       const usdPerKg = usdPerBushel / BUSHEL_TO_KG_WHEAT;
       return usdPerKg * FX_RATES.USD_to_NGN;
 
     case 'palm':
-      const usdPerKgPalm = value / TONNE_TO_KG;
-      return usdPerKgPalm * FX_RATES.USD_to_NGN;
+      // KO*1: returns Malaysian Ringgit (MYR) per metric ton
+      // Example: 3500 means 3,500 MYR/tonne
+      const myrPerTonne = value;
+      const myrPerKg = myrPerTonne / 1000; // Convert to MYR/kg
+      const usdPerKgPalm = myrPerKg * FX_RATES.MYR_to_USD; // Convert MYR to USD
+      return usdPerKgPalm * FX_RATES.USD_to_NGN; // Convert USD to NGN
 
     case 'crude_palm':
+      // CB*1: This might be Brent Crude Oil, not Crude Palm Oil!
+      // Check if this symbol is correct for Crude Palm Oil
       const BARREL_TO_KG = 136.4;
       const usdPerKgCrude = value / BARREL_TO_KG;
       return usdPerKgCrude * FX_RATES.USD_to_NGN;
     
     case 'sugar':
+      // SB*1: returns US cents per pound ✓
       const usdPerLb = value / 100;
       const usdPerKgSugar = usdPerLb / LB_TO_KG;
       return usdPerKgSugar * FX_RATES.USD_to_NGN;
 
     case 'aluminum':
+      // AL*1: returns US dollars per metric ton ✓
       const usdPerKgAl = value / TONNE_TO_KG;
       return usdPerKgAl * FX_RATES.USD_to_NGN;
 
