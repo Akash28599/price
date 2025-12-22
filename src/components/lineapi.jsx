@@ -17,7 +17,7 @@ import {
 // Commodity symbols for the DDFPlus API
 const COMMODITY_SYMBOLS = {
   wheat: 'ZW*1',
-  milling_wheat: 'ML*1',  // Updated: Milling Wheat symbol
+  milling_wheat: 'ML*1',
   palm: 'KO*1',
   sugar: 'SB*1',
   aluminum: 'AL*1',
@@ -27,12 +27,12 @@ const COMMODITY_SYMBOLS = {
 // Exchange rates
 const FX_RATES = {
   USD_to_NGN: 1460,
-  EUR_to_NGN: 1600,  // Added for Milling Wheat conversion
+  EUR_to_NGN: 1600,
   GHS_to_USD: 0.087,
   USD_to_GHS: 11.48,
   MYR_to_USD: 0.21,
   USD_to_MYR: 4.76,
-  EUR_to_USD: 1.08   // Added: Current EUR/USD rate
+  EUR_to_USD: 1.08
 };
 
 // Conversion factors
@@ -59,10 +59,10 @@ const decimalsByCommodity = {
   aluminum: 2
 };
 
-// Commodity names and colors
+// Commodity names and colors - UPDATED: Wheat Flour to Wheat CBOT
 const COMMODITY_CONFIG = {
   wheat: { 
-    name: 'Wheat Flour', 
+    name: 'Wheat CBOT',  // CHANGED FROM 'Wheat Flour'
     icon: '🌾', 
     excelColor: '#3B82F6',
     apiColor: '#10B981',
@@ -71,7 +71,7 @@ const COMMODITY_CONFIG = {
   milling_wheat: { 
     name: 'Milling Wheat', 
     icon: '🌾', 
-    excelColor: '#8B5CF6',  // Purple color
+    excelColor: '#8B5CF6',
     apiColor: '#10B981',
     category: 'Grains'
   },
@@ -108,7 +108,7 @@ const COMMODITY_CONFIG = {
 // Excel data mapping by commodity
 const EXCEL_DATA_SOURCES = {
   wheat: COMPLETE_WHEAT_DATA,
-  milling_wheat: COMPLETE_WHEAT_DATA,  // Uses same wheat data
+  milling_wheat: COMPLETE_WHEAT_DATA,
   palm: COMPLETE_PALM_OIL_DATA,
   crude_palm: COMPLETE_CRUDE_PALM_OIL_DATA,
   sugar: SUGAR_MONTH_COST,
@@ -127,14 +127,11 @@ function formatDateForAPI(date) {
 function getMonthKey(dateStr) {
   if (!dateStr) return null;
   
-  // If it's already in YYYY-MM format
   if (/^\d{4}-\d{2}$/.test(dateStr)) {
     return dateStr;
   }
   
-  // Handle Excel date formats
   if (typeof dateStr === 'string') {
-    // Handle format like "Apr-24" or "Apr-2024"
     if (dateStr.match(/^[A-Za-z]{3,}-\d{2,4}$/)) {
       const [monthStr, yearStr] = dateStr.split('-');
       const monthNames = {
@@ -149,7 +146,6 @@ function getMonthKey(dateStr) {
       const month = monthNames[monthStr] || '01';
       let year = parseInt(yearStr);
       
-      // Convert 2-digit year to 4-digit (assuming 2000s for recent years)
       if (yearStr.length === 2) {
         const currentYear = new Date().getFullYear();
         const shortYear = parseInt(yearStr);
@@ -159,7 +155,6 @@ function getMonthKey(dateStr) {
       return `${year}-${month}`;
     }
     
-    // Handle ISO date strings
     if (dateStr.includes('T')) {
       const date = new Date(dateStr);
       if (!isNaN(date)) {
@@ -168,7 +163,6 @@ function getMonthKey(dateStr) {
     }
   }
   
-  // Try parsing as Date object
   try {
     const date = new Date(dateStr);
     if (!isNaN(date)) {
@@ -205,46 +199,38 @@ function filterRecentData(data, maxYearsBack = 5) {
 }
 
 // Convert API value to NGN/kg for all commodities
-// Update the convertApiValueToNGNPerKg function for milling_wheat:
 function convertApiValueToNGNPerKg(commodity, apiValue) {
   if (apiValue == null || isNaN(Number(apiValue))) return null;
   const value = Number(apiValue);
 
   switch(commodity) {
     case 'wheat':
-      // ZW*1: returns US cents per bushel
       const usdPerBushel = value / 100;
       const usdPerKg = usdPerBushel / BUSHEL_TO_KG_WHEAT;
       return usdPerKg * FX_RATES.USD_to_NGN;
 
     case 'milling_wheat':
-      // ML*1: returns Euros per metric ton (NOT US cents per bushel)
-      // Example: 200 means 200 EUR/tonne
       const eurPerTonne = value;
-      const eurPerKg = eurPerTonne / TONNE_TO_KG; // Convert to EUR/kg
-      return eurPerKg * FX_RATES.EUR_to_NGN; // Convert EUR to NGN
+      const eurPerKg = eurPerTonne / TONNE_TO_KG;
+      return eurPerKg * FX_RATES.EUR_to_NGN;
 
     case 'palm':
-      // KO*1: returns Malaysian Ringgit (MYR) per metric ton
       const myrPerTonne = value;
       const myrPerKg = myrPerTonne / 1000;
       const usdPerKgPalm = myrPerKg * FX_RATES.MYR_to_USD;
       return usdPerKgPalm * FX_RATES.USD_to_NGN;
 
     case 'crude_palm':
-      // CB*1: Brent Crude Oil
       const BARREL_TO_KG = 136.4;
       const usdPerKgCrude = value / BARREL_TO_KG;
       return usdPerKgCrude * FX_RATES.USD_to_NGN;
     
     case 'sugar':
-      // SB*1: returns US cents per pound
       const usdPerLb = value / 100;
       const usdPerKgSugar = usdPerLb / LB_TO_KG;
       return usdPerKgSugar * FX_RATES.USD_to_NGN;
 
     case 'aluminum':
-      // AL*1: returns US dollars per metric ton
       const usdPerKgAl = value / TONNE_TO_KG;
       return usdPerKgAl * FX_RATES.USD_to_NGN;
 
@@ -252,13 +238,14 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
       return value;
   }
 }
+
 // Convert Excel purchase price to NGN/kg
 function convertExcelPriceToNGNPerKg(commodity, excelItem) {
   if (!excelItem) return null;
   
   switch(commodity) {
     case 'wheat':
-    case 'milling_wheat':  // Added milling wheat with same logic
+    case 'milling_wheat':
       if (excelItem.currency === 'USD') {
         return excelItem.rate * FX_RATES.USD_to_NGN;
       } else if (excelItem.currency === 'GHS') {
@@ -276,7 +263,7 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
       
    case 'crude_palm':
   if (excelItem.currency === 'USD') {
-    const usdPerKg = excelItem.rate / 1000;  // Convert ton to kg
+    const usdPerKg = excelItem.rate / 1000;
     return usdPerKg * FX_RATES.USD_to_NGN;
   }
   return excelItem.rate;
@@ -297,7 +284,7 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
 function getExcelDateForMonth(commodity, excelItem) {
   switch(commodity) {
     case 'wheat':
-    case 'milling_wheat':  // Added milling wheat
+    case 'milling_wheat':
     case 'palm':
     case 'crude_palm':
       return excelItem.poDate;
@@ -332,7 +319,6 @@ function processExcelDataByMonth(commodity) {
     const year = parseInt(monthKey.split('-')[0]);
     const currentYear = new Date().getFullYear();
     
-    // Only keep data from 2020 onwards
     if (year < 2020 || year > currentYear + 1) {
       console.warn(`Skipping unrealistic year for ${commodity}:`, monthKey, 'from date:', dateStr);
       return;
@@ -377,7 +363,6 @@ async function fetchCommodityDataForMonths(symbol, months) {
   try {
     const monthlyResults = [];
     
-    // Filter months to only recent ones (2020 onwards)
     const recentMonths = months.filter(monthKey => {
       const year = parseInt(monthKey.split('-')[0]);
       return year >= 2020;
@@ -424,17 +409,14 @@ async function fetchCommodityDataForMonths(symbol, months) {
         lines.forEach((line, index) => {
           const parts = line.split(',').map(p => p.trim());
           
-          // Log first few lines to debug
           if (index < 3) {
             console.log(`Line ${index} for ${month}:`, parts);
           }
           
-          // CSV format: Symbol,Date,Open,High,Low,Close,Volume,OpenInterest
           if (parts.length >= 6) {
             const dateStr = parts[1];
             const closePrice = parseFloat(parts[5]);
             
-            // Verify this date belongs to the requested month
             const date = new Date(dateStr);
             const lineMonthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             
@@ -452,7 +434,6 @@ async function fetchCommodityDataForMonths(symbol, months) {
         });
         
         if (dailyPrices.length > 0) {
-          // Calculate monthly average
           const sum = dailyPrices.reduce((sum, day) => sum + day.price, 0);
           const monthlyAvg = sum / dailyPrices.length;
           
@@ -472,7 +453,6 @@ async function fetchCommodityDataForMonths(symbol, months) {
         console.error(`Error fetching ${month} for ${symbol}:`, fetchError);
       }
       
-      // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 150));
     }
     
@@ -500,14 +480,12 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
       return [];
     }
     
-    // Check if all prices are the same
     const allPrices = monthlyResults.map(r => r.avgPrice);
     const uniquePrices = [...new Set(allPrices.map(p => p.toFixed(2)))];
     
     if (uniquePrices.length === 1) {
       console.warn(`⚠️ API returning constant prices for ${symbol}: ${uniquePrices[0]}`);
       
-      // Try fetching a longer time range
       console.log(`Trying to fetch more data for ${symbol} to get variation...`);
       
       const endDate = new Date();
@@ -539,7 +517,6 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
             });
             
             if (allDailyData.length > 0) {
-              // Group by month and calculate averages
               const monthlyAverages = {};
               allDailyData.forEach(item => {
                 const date = new Date(item.date);
@@ -555,7 +532,6 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
                 monthlyAverages[monthKey].count++;
               });
               
-              // Update monthly results with real variation
               const updatedResults = monthlyResults.map(monthResult => {
                 const monthData = monthlyAverages[monthResult.monthKey];
                 if (monthData && monthData.prices.length > 0) {
@@ -647,7 +623,6 @@ async function fetchDailyPrices(symbol, days = 30) {
 // Fetch current price with weekly and yearly data
 async function fetchCurrentPriceWithHistory(symbol) {
   try {
-    // Fetch last 365 days for current, weekly, and monthly data
     const dailyData = await fetchDailyPrices(symbol, 365);
     
     if (dailyData.length === 0) {
@@ -655,18 +630,11 @@ async function fetchCurrentPriceWithHistory(symbol) {
       return null;
     }
     
-    // Get the latest price (today)
     const latest = dailyData[dailyData.length - 1];
-    
-    // Get price from 7 days ago (weekly comparison)
     const weekAgoIndex = Math.max(0, dailyData.length - 8);
     const weekAgo = dailyData[weekAgoIndex];
-    
-    // Get price from 30 days ago (monthly comparison)
     const monthAgoIndex = Math.max(0, dailyData.length - 31);
     const monthAgo = dailyData[monthAgoIndex];
-    
-    // Get price from 365 days ago (yearly comparison)
     const yearAgoIndex = Math.max(0, dailyData.length - 366);
     const yearAgo = dailyData[yearAgoIndex];
     
@@ -743,7 +711,7 @@ const CommodityDashboard = () => {
   const [dataDebug, setDataDebug] = useState('');
   const [apiStatus, setApiStatus] = useState('connecting');
 
-  // Process Excel data by month (static, doesn't need API)
+  // Process Excel data by month
   const excelMonthlyData = useMemo(() => {
     console.log('Processing Excel data for all commodities...');
     const data = {};
@@ -751,7 +719,6 @@ const CommodityDashboard = () => {
       data[commodity] = processExcelDataByMonth(commodity);
     });
     
-    // For aluminum, create monthly data with negotiated price
     if (!data.aluminum || data.aluminum.length === 0) {
       const months = [];
       const currentDate = new Date();
@@ -778,7 +745,6 @@ const CommodityDashboard = () => {
       console.log('Generated aluminum data with negotiated price:', months.length, 'months');
     }
     
-    // Log data summary
     Object.keys(data).forEach(commodity => {
       console.log(`${commodity} Excel months:`, data[commodity].length);
       if (data[commodity].length > 0) {
@@ -822,14 +788,12 @@ const CommodityDashboard = () => {
             continue;
           }
           
-          // Convert all prices to NGN/kg
           const currentNGN = convertApiValueToNGNPerKg(commodity, priceData.current);
           const previousNGN = priceData.previous ? convertApiValueToNGNPerKg(commodity, priceData.previous) : null;
           const weekAgoNGN = priceData.weekAgo ? convertApiValueToNGNPerKg(commodity, priceData.weekAgo) : null;
           const monthAgoNGN = priceData.monthAgo ? convertApiValueToNGNPerKg(commodity, priceData.monthAgo) : null;
           const yearAgoNGN = priceData.yearAgo ? convertApiValueToNGNPerKg(commodity, priceData.yearAgo) : null;
           
-          // Calculate percentages
           const percentages = {
             day: previousNGN ? calculatePercentageChange(currentNGN, previousNGN) : null,
             week: weekAgoNGN ? calculatePercentageChange(currentNGN, weekAgoNGN) : null,
@@ -861,7 +825,6 @@ const CommodityDashboard = () => {
             percentages
           });
           
-          // Small delay between requests
           await new Promise(resolve => setTimeout(resolve, 200));
         }
         
@@ -872,7 +835,6 @@ const CommodityDashboard = () => {
         console.error('Error fetching live prices:', error);
         setApiStatus('error');
         
-        // Set empty data
         const emptyLiveData = {};
         Object.keys(COMMODITY_SYMBOLS).forEach(commodity => {
           emptyLiveData[commodity] = {
@@ -896,7 +858,6 @@ const CommodityDashboard = () => {
 
     fetchLivePrices();
     
-    // Refresh live prices every 5 minutes
     const intervalId = setInterval(fetchLivePrices, 5 * 60 * 1000);
     
     return () => clearInterval(intervalId);
@@ -929,8 +890,6 @@ const CommodityDashboard = () => {
           }
           
           const excelMonths = excelMonthly.map(item => item.monthKey);
-          
-          // Fetch REAL API data with variation detection
           const apiMonthlyRaw = await fetchMonthlyPricesWithVariation(symbol, excelMonths);
           
           console.log(`API results for ${commodity}:`, apiMonthlyRaw.map(r => ({
@@ -942,7 +901,6 @@ const CommodityDashboard = () => {
           const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw);
           const combinedData = combineMonthlyData(excelMonthly, apiMonthly);
           
-          // Check if API data has variation
           const apiPrices = combinedData.filter(d => d.apiPrice).map(d => d.apiPrice);
           const uniquePrices = [...new Set(apiPrices.map(p => p.toFixed(2)))];
           const hasVariation = uniquePrices.length > 1;
@@ -980,7 +938,6 @@ const CommodityDashboard = () => {
         setCommodityData(dataObj);
         setMonthlyComparisonData(comparisonObj);
         
-        // Calculate API data availability and variation
         const apiDataSummary = Object.keys(comparisonObj).map(commodity => {
           const data = comparisonObj[commodity];
           const apiMonths = data.filter(d => d.apiPrice != null).length;
@@ -1000,7 +957,6 @@ const CommodityDashboard = () => {
         setError(`Failed to fetch data: ${err.message}. Please check your API connection.`);
         setApiStatus('error');
         
-        // Set empty data on error
         const emptyData = {};
         const emptyComparison = {};
         
@@ -1033,7 +989,6 @@ const CommodityDashboard = () => {
 
     fetchAllCommodityData();
     
-    // Refresh data every 10 minutes
     const intervalId = setInterval(fetchAllCommodityData, 10 * 60 * 1000);
     
     return () => clearInterval(intervalId);
@@ -1583,15 +1538,17 @@ const CommodityDashboard = () => {
               <div>
                 <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (Market Price)</div>
                 <div style={{ color: '#374151' }}>
-                  DDFPlus API prices (ML*1 for Milling Wheat)
+                  DDFPlus API prices
                   <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                    {selectedCommodity === 'milling_wheat' ? 'ML*1: Milling Wheat Futures' : 'Real-time commodity data'}
+                    {selectedCommodity === 'wheat' ? 'ZW*1: CBOT Wheat Futures' : 
+                     selectedCommodity === 'milling_wheat' ? 'ML*1: Milling Wheat Futures' : 
+                     'Real-time commodity data'}
                   </div>
                 </div>
               </div>
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              Note: Milling Wheat uses same Excel data as Wheat Flour but different API symbol (ML*1)
+              Note: Wheat CBOT shows CBOT Wheat Futures prices
             </div>
           </div>
         </div>
@@ -1986,7 +1943,6 @@ const CommodityDashboard = () => {
                     onClick={() => {
                       // Refresh live prices function
                       setLoadingLivePrices(true);
-                      // You would need to implement a refresh function here
                     }}
                     style={{
                       padding: '4px 8px',
@@ -2028,7 +1984,7 @@ const CommodityDashboard = () => {
           <div>
             <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Commodity Symbols</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Wheat Flour: ZW*1<br/>
+              • Wheat CBOT: ZW*1<br/>
               • Milling Wheat: ML*1<br/>
               • Palm Oil: KO*1<br/>
               • Sugar: SB*1<br/>
