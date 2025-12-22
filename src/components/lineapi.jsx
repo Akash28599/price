@@ -274,11 +274,12 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
       }
       return excelItem.rate;
       
-    case 'crude_palm':
-      if (excelItem.currency === 'USD') {
-        return excelItem.rate * FX_RATES.USD_to_NGN;
-      }
-      return excelItem.rate;
+   case 'crude_palm':
+  if (excelItem.currency === 'USD') {
+    const usdPerKg = excelItem.rate / 1000;  // Convert ton to kg
+    return usdPerKg * FX_RATES.USD_to_NGN;
+  }
+  return excelItem.rate;
       
     case 'sugar':
       return excelItem.cost;
