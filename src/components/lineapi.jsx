@@ -61,13 +61,7 @@ const decimalsByCommodity = {
 
 // Commodity names and colors - UPDATED: Wheat Flour to Wheat CBOT
 const COMMODITY_CONFIG = {
-  wheat: { 
-    name: 'Wheat CBOT',  // CHANGED FROM 'Wheat Flour'
-    icon: '🌾', 
-    excelColor: '#3B82F6',
-    apiColor: '#10B981',
-    category: 'Grains'
-  },
+ 
   milling_wheat: { 
     name: 'Milling Wheat', 
     icon: '🌾', 
