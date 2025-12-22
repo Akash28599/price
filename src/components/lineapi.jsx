@@ -61,43 +61,64 @@ const decimalsByCommodity = {
 
 // Commodity names and colors - UPDATED: Wheat Flour to Wheat CBOT
 const COMMODITY_CONFIG = {
- 
+  // CHANGED: Keep wheat in COMMODITY_CONFIG but add a flag for chart visibility
+  wheat: { 
+    name: 'Wheat CBOT', 
+    icon: '🌾', 
+    excelColor: '#3B82F6',
+    apiColor: '#10B981',
+    category: 'Grains',
+    showInChart: false // NEW: Flag to control chart visibility
+  },
   milling_wheat: { 
     name: 'Milling Wheat', 
     icon: '🌾', 
     excelColor: '#8B5CF6',
     apiColor: '#10B981',
-    category: 'Grains'
+    category: 'Grains',
+    showInChart: true
   },
   palm: { 
     name: 'Palm Oil', 
     icon: '🌴', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
-    category: 'Oils'
+    category: 'Oils',
+    showInChart: true
   },
   crude_palm: { 
     name: 'Crude Palm Oil', 
     icon: '🛢️', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
-    category: 'Oils'
+    category: 'Oils',
+    showInChart: true
   },
   sugar: { 
     name: 'Sugar', 
     icon: '🍬', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
-    category: 'Softs'
+    category: 'Softs',
+    showInChart: true
   },
   aluminum: { 
     name: 'Aluminum (Raw Material)',
     icon: '🥫', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
-    category: 'Metals'
+    category: 'Metals',
+    showInChart: true
   }
 };
+
+// NEW: Filter commodities that should appear in the chart comparison
+const CHART_COMMODITIES = Object.keys(COMMODITY_CONFIG).filter(
+  commodity => COMMODITY_CONFIG[commodity].showInChart
+);
+
+// NEW: Default selected commodity for chart (first from CHART_COMMODITIES)
+const DEFAULT_CHART_COMMODITY = CHART_COMMODITIES[0];
 
 // Excel data mapping by commodity
 const EXCEL_DATA_SOURCES = {
@@ -695,7 +716,8 @@ function combineMonthlyData(excelMonthly, apiMonthly) {
 }
 
 const CommodityDashboard = () => {
-  const [selectedCommodity, setSelectedCommodity] = useState('wheat');
+  // CHANGED: Initialize with DEFAULT_CHART_COMMODITY (which excludes wheat)
+  const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
   const [commodityData, setCommodityData] = useState({});
   const [monthlyComparisonData, setMonthlyComparisonData] = useState({});
   const [livePrices, setLivePrices] = useState({});
@@ -1253,14 +1275,14 @@ const CommodityDashboard = () => {
         </div>
       )}
 
-      {/* Commodity Selector */}
+      {/* CHANGED: Commodity Selector - Only show commodities that should appear in chart */}
       <div style={{
         display: 'flex',
         gap: '12px',
         marginBottom: '32px',
         flexWrap: 'wrap'
       }}>
-        {Object.keys(COMMODITY_CONFIG).map(commodity => {
+        {CHART_COMMODITIES.map(commodity => {
           const config = COMMODITY_CONFIG[commodity];
           const isSelected = selectedCommodity === commodity;
           const comparisonData = monthlyComparisonData[commodity] || [];
@@ -1359,7 +1381,7 @@ const CommodityDashboard = () => {
             gap: '16px',
             marginBottom: '24px'
           }}>
-            {Object.keys(COMMODITY_CONFIG).map(commodity => {
+            {CHART_COMMODITIES.map(commodity => {
               const config = COMMODITY_CONFIG[commodity];
               const data = commodityData[commodity];
               const comparisonData = monthlyComparisonData[commodity] || [];
@@ -1669,7 +1691,7 @@ const CommodityDashboard = () => {
             )}
           </div>
 
-          {/* LIVE PRICES TABLE */}
+          {/* LIVE PRICES TABLE - IMPORTANT: This still shows ALL commodities including wheat */}
           <div style={{
             marginTop: '24px',
             padding: '16px',
