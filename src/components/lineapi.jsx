@@ -1064,7 +1064,7 @@ const CommodityDashboard = () => {
             alignItems: 'center'
           }}>
             <span style={{ fontWeight: 'bold', color: config.excelColor, fontSize: '16px' }}>
-             {data.excelPrice.toFixed(dec)} {unitsByCommodity[selectedCommodity]}
+              {data.excelPrice.toFixed(dec)} NGN/kg
             </span>
             {selectedCommodity === 'aluminum' ? (
               <span style={{ fontSize: '11px', color: '#9ca3af' }}>
