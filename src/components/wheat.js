@@ -152,62 +152,23 @@ export const SUGAR_MONTH_COST = [
 
 // src/data/commodityData.js - UPDATED VERSION
 export const COMPLETE_CRUDE_PALM_OIL_DATA = [
-  // Correct calculation: FOB (in PFI) ÷ QTY (in PFI) × 1000
-  // PO 4200004457: FOB=1220, QTY=1000 → (1220 ÷ 1000) × 1000 = 1220 USD/ton
-  { poDate: '2025-10-13', rate: 1220.00, currency: 'USD' },
-  { poDate: '2025-01-03', rate: 4333.33, currency: 'USD' }, // 1300 ÷ 300 × 1000
-  { poDate: '2025-10-13', rate: 1220.00, currency: 'USD' },
-  { poDate: '2025-10-13', rate: 1220.00, currency: 'USD' },
-  { poDate: '2025-10-13', rate: 1220.00, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },  // 1295 ÷ 2000 × 1000
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-02-12', rate: 2520.00, currency: 'USD' }, // 1260 ÷ 500 × 1000
-  { poDate: '2025-03-05', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-02-12', rate: 2520.00, currency: 'USD' },
-  { poDate: '2025-01-17', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-03-05', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-03-05', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-01-30', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-01-30', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-01-17', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-01-30', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-01-31', rate: 647.50, currency: 'USD' },
-  { poDate: '2025-03-05', rate: 2580.00, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },  // 1310 ÷ 1500 × 1000
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2025-01-30', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-01-30', rate: 2580.00, currency: 'USD' },
-  { poDate: '2025-02-12', rate: 2520.00, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2025-01-30', rate: 2580.00, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-10-09', rate: 3633.33, currency: 'USD' }, // 1090 ÷ 300 × 1000
-  { poDate: '2024-10-09', rate: 3633.33, currency: 'USD' },
-  { poDate: '2024-10-09', rate: 7333.33, currency: 'USD' }, // 1100 ÷ 150 × 1000
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2025-01-03', rate: 4333.33, currency: 'USD' },
-  { poDate: '2025-01-20', rate: 13000.00, currency: 'USD' }, // 1300 ÷ 100 × 1000
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' },
-  { poDate: '2024-10-09', rate: 7333.33, currency: 'USD' },
-  { poDate: '2024-10-09', rate: 7333.33, currency: 'USD' },
-  { poDate: '2025-01-03', rate: 4333.33, currency: 'USD' },
-  { poDate: '2025-01-03', rate: 4333.33, currency: 'USD' },
-  { poDate: '2025-01-03', rate: 4333.33, currency: 'USD' },
-  { poDate: '2024-12-11', rate: 873.33, currency: 'USD' }
+  // October 2024 - Average: 1096 USD/ton
+  { poDate: '2024-10-01', rate: 1096, currency: 'USD' },
+  
+  // December 2024 - Average: 1310 USD/ton  
+  { poDate: '2024-12-01', rate: 1310, currency: 'USD' },
+  
+  // January 2025 - Average: 1294.38 USD/ton
+  { poDate: '2025-01-01', rate: 1294.38, currency: 'USD' },
+  
+  // February 2025 - Average: 1260 USD/ton
+  { poDate: '2025-02-01', rate: 1260, currency: 'USD' },
+  
+  // March 2025 - Average: 1290 USD/ton
+  { poDate: '2025-03-01', rate: 1290, currency: 'USD' },
+  
+  // October 2025 - Average: 1220 USD/ton
+  { poDate: '2025-10-01', rate: 1220, currency: 'USD' }
 ];
 
 export const CAN_DATA = [
