@@ -45,7 +45,7 @@ const unitsByCommodity = {
   wheat: 'NGN/kg',
   milling_wheat: 'NGN/kg',
   palm: 'NGN/kg',
-  crude_palm: 'USD/kg',
+  crude_palm: 'NGN/kg',
   sugar: 'NGN/kg',
   aluminum: 'NGN/kg'
 };
@@ -238,7 +238,7 @@ function convertApiValueToNGNPerKg(commodity, apiValue) {
     case 'crude_palm':
       const BARREL_TO_KG = 136.4;
       const usdPerKgCrude = value / BARREL_TO_KG;
-      return usdPerKgCrude 
+      return usdPerKgCrude * FX_RATES.USD_to_NGN;
     
     case 'sugar':
       const usdPerLb = value / 100;
@@ -279,7 +279,7 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
    case 'crude_palm':
   if (excelItem.currency === 'USD') {
     const usdPerKg = excelItem.rate / 1000;
-    return usdPerKg 
+    return usdPerKg * FX_RATES.USD_to_NGN;
   }
   return excelItem.rate;
       
@@ -1641,7 +1641,7 @@ const CommodityDashboard = () => {
                     tickFormatter={value => `${value.toFixed(decimalsByCommodity[selectedCommodity])}`}
                     tick={{ fontSize: 12 }}
                     label={{ 
-                      value: unitsByCommodity[selectedCommodity],
+                      value: 'NGN/kg',
                       angle: -90,
                       position: 'insideLeft',
                       offset: 10,
