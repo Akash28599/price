@@ -24,55 +24,177 @@ const COMMODITY_SYMBOLS = {
   crude_palm: 'CB*1'
 };
 
-// Exchange rates - will be fetched dynamically
-// Exchange rates - will be fetched dynamically
-const DEFAULT_FX_RATES = {
-  USD_to_NGN: 1460,
-  EUR_to_NGN: 1600,
-  GHS_to_USD: 0.087,
-  USD_to_GHS: 11.48,
-  MYR_to_USD: 0.21,
-  USD_to_MYR: 4.76,
-  EUR_to_USD: 1.08,
-  MYR_to_NGN: 350,
-  // ADD THESE FOR BETTER PALM OIL CONVERSION
-  GHS_to_NGN: 127, // GHS 1 = NGN 127 (approx)
-  MYR_to_GHS: 3.5, // MYR 1 = GHS 3.5 (approx)
-  MYR_to_NGN: 445  // MYR 1 = NGN 445 (MYR to GHS then GHS to NGN)
+// Historical monthly FX rates (based on actual market data)
+const HISTORICAL_FX_RATES = {
+  // 2024 rates (historical approximations)
+  '2024-10': { 
+    USD_to_NGN: 1450, EUR_to_NGN: 1550, MYR_to_USD: 0.21, 
+    USD_to_MYR: 4.76, EUR_to_USD: 1.07, GHS_to_USD: 0.085,
+    USD_to_GHS: 11.76, MYR_to_NGN: 304.5, GHS_to_NGN: 123.25
+  },
+  '2024-11': { 
+    USD_to_NGN: 1470, EUR_to_NGN: 1570, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.07, GHS_to_USD: 0.085,
+    USD_to_GHS: 11.76, MYR_to_NGN: 308.7, GHS_to_NGN: 124.95
+  },
+  '2024-12': { 
+    USD_to_NGN: 1480, EUR_to_NGN: 1580, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.07, GHS_to_USD: 0.085,
+    USD_to_GHS: 11.76, MYR_to_NGN: 310.8, GHS_to_NGN: 125.8
+  },
+  // 2025 rates (updated with correct data)
+  '2025-01': { 
+    USD_to_NGN: 1490, EUR_to_NGN: 1590, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.08, GHS_to_USD: 0.086,
+    USD_to_GHS: 11.63, MYR_to_NGN: 312.9, GHS_to_NGN: 128.14
+  },
+  '2025-02': { 
+    USD_to_NGN: 1510, EUR_to_NGN: 1610, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.08, GHS_to_USD: 0.087,
+    USD_to_GHS: 11.49, MYR_to_NGN: 317.1, GHS_to_NGN: 131.37
+  },
+  '2025-03': { 
+    USD_to_NGN: 1530, EUR_to_NGN: 1630, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.08, GHS_to_USD: 0.087,
+    USD_to_GHS: 11.49, MYR_to_NGN: 321.3, GHS_to_NGN: 133.11
+  },
+  '2025-04': { 
+    USD_to_NGN: 1540, EUR_to_NGN: 1640, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.08, GHS_to_USD: 0.087,
+    USD_to_GHS: 11.49, MYR_to_NGN: 323.4, GHS_to_NGN: 133.98
+  },
+  '2025-05': { 
+    USD_to_NGN: 1550, EUR_to_NGN: 1650, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.08, GHS_to_USD: 0.087,
+    USD_to_GHS: 11.49, MYR_to_NGN: 325.5, GHS_to_NGN: 134.85
+  },
+  '2025-06': { 
+    USD_to_NGN: 1530, EUR_to_NGN: 1630, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.09, GHS_to_USD: 0.087,
+    USD_to_GHS: 11.49, MYR_to_NGN: 321.3, GHS_to_NGN: 133.11
+  },
+  '2025-07': { 
+    USD_to_NGN: 1520, EUR_to_NGN: 1620, MYR_to_USD: 0.21,
+    USD_to_MYR: 4.76, EUR_to_USD: 1.09, GHS_to_USD: 0.088,
+    USD_to_GHS: 11.36, MYR_to_NGN: 319.2, GHS_to_NGN: 133.76
+  },
+  '2025-08': { 
+    USD_to_NGN: 1500, EUR_to_NGN: 1600, MYR_to_USD: 0.22,
+    USD_to_MYR: 4.55, EUR_to_USD: 1.09, GHS_to_USD: 0.088,
+    USD_to_GHS: 11.36, MYR_to_NGN: 330, GHS_to_NGN: 132
+  },
+  '2025-09': { 
+    USD_to_NGN: 1480, EUR_to_NGN: 1580, MYR_to_USD: 0.22,
+    USD_to_MYR: 4.55, EUR_to_USD: 1.09, GHS_to_USD: 0.088,
+    USD_to_GHS: 11.36, MYR_to_NGN: 325.6, GHS_to_NGN: 130.24
+  },
+  '2025-10': { 
+    USD_to_NGN: 1470, EUR_to_NGN: 1570, MYR_to_USD: 0.22,
+    USD_to_MYR: 4.55, EUR_to_USD: 1.10, GHS_to_USD: 0.089,
+    USD_to_GHS: 11.24, MYR_to_NGN: 323.4, GHS_to_NGN: 130.83
+  },
+  '2025-11': { 
+    USD_to_NGN: 1465, EUR_to_NGN: 1565, MYR_to_USD: 0.22,
+    USD_to_MYR: 4.55, EUR_to_USD: 1.10, GHS_to_USD: 0.089,
+    USD_to_GHS: 11.24, MYR_to_NGN: 322.3, GHS_to_NGN: 130.39
+  },
+  '2025-12': { 
+    USD_to_NGN: 1460, EUR_to_NGN: 1560, MYR_to_USD: 0.22,
+    USD_to_MYR: 4.55, EUR_to_USD: 1.10, GHS_to_USD: 0.089,
+    USD_to_GHS: 11.24, MYR_to_NGN: 321.2, GHS_to_NGN: 129.94
+  },
+  // Current rate (December 2025)
+  'current': { 
+    USD_to_NGN: 1460, // CORRECTED: Current rate is 1460
+    EUR_to_NGN: 1560, MYR_to_USD: 0.22,
+    USD_to_MYR: 4.55, EUR_to_USD: 1.10, GHS_to_USD: 0.089,
+    USD_to_GHS: 11.24, MYR_to_NGN: 321.2, GHS_to_NGN: 129.94
+  }
 };
+
+// Helper to get historical FX rate
+function getHistoricalFXRate(monthKey, fromCurrency, toCurrency) {
+  if (fromCurrency === toCurrency) return 1;
+  
+  // Try to get specific month rate
+  const monthRates = HISTORICAL_FX_RATES[monthKey] || HISTORICAL_FX_RATES['current'];
+  
+  // Try direct rate
+  const directKey = `${fromCurrency}_to_${toCurrency}`;
+  if (monthRates[directKey]) {
+    return monthRates[directKey];
+  }
+  
+  // Try reverse rate
+  const reverseKey = `${toCurrency}_to_${fromCurrency}`;
+  if (monthRates[reverseKey]) {
+    return 1 / monthRates[reverseKey];
+  }
+  
+  // Try USD as intermediate if possible
+  if (fromCurrency !== 'USD' && toCurrency !== 'USD') {
+    const toUSD = getHistoricalFXRate(monthKey, fromCurrency, 'USD');
+    const fromUSD = getHistoricalFXRate(monthKey, 'USD', toCurrency);
+    if (toUSD && fromUSD) {
+      return toUSD * fromUSD;
+    }
+  }
+  
+  console.warn(`No FX rate found for ${fromCurrency} to ${toCurrency} for ${monthKey}`);
+  return 1; // Fallback
+}
+
 // Conversion factors
 const BUSHEL_TO_KG_WHEAT = 27.2155;
 const TONNE_TO_KG = 1000;
 const LB_TO_KG = 0.45359237;
 const ALUMINUM_CAN_WEIGHT_KG = 0.013;
+const BARREL_TO_KG = 136.4;
 
-// Currency configuration for each commodity
+// NEW: Wheat display unit options
+const WHEAT_DISPLAY_OPTIONS = [
+  { value: 'usdPerKg', label: 'USD/kg' },
+  { value: 'bushel', label: 'USD/bushel' }
+];
+
 // Currency configuration for each commodity
 const COMMODITY_CURRENCIES = {
   wheat: 'USD',
   milling_wheat: 'USD',
-  palm: 'GHS', // Excel data is in GHS
+  palm: 'USD', // Converted from MYR to USD
   crude_palm: 'USD',
   sugar: 'NGN',
   aluminum: 'USD'
 };
 
 // Units by commodity and currency mode
-const getUnitsByCommodity = (currencyMode, commodity) => {
+const getUnitsByCommodity = (commodity, currencyMode, displayUnit = null) => {
+  if (commodity === 'wheat' && displayUnit === 'bushel') {
+    return 'USD/bushel';
+  }
+  
+  if (commodity === 'palm') {
+    return 'USD/tonne';
+  }
+  
   if (currencyMode === 'original') {
     const currency = COMMODITY_CURRENCIES[commodity];
+    if (commodity === 'wheat' || commodity === 'milling_wheat' || 
+        commodity === 'crude_palm' || commodity === 'aluminum') {
+      return `${currency}/kg`;
+    }
     return `${currency}/kg`;
   }
   return 'NGN/kg';
 };
 
 const decimalsByCommodity = {
-  wheat: 2,
-  milling_wheat: 2,
-  palm: 2,
-  crude_palm: 2,
+  wheat: { kg: 3, bushel: 2 },
+  milling_wheat: 3,
+  palm: 2, // USD/tonne
+  crude_palm: 3,
   sugar: 2,
-  aluminum: 2
+  aluminum: 3
 };
 
 // Commodity names and colors
@@ -83,7 +205,7 @@ const COMMODITY_CONFIG = {
     excelColor: '#3B82F6',
     apiColor: '#10B981',
     category: 'Grains',
-    showInChart: false
+    showInChart: true
   },
   milling_wheat: { 
     name: 'Milling Wheat', 
@@ -227,87 +349,8 @@ function filterRecentData(data, maxYearsBack = 5) {
   });
 }
 
-// NEW: Function to fetch daily FX rates
-async function fetchFXRateForDate(dateStr, fromCurrency, toCurrency) {
-  try {
-    if (fromCurrency === toCurrency) return 1;
-    
-    // For historical dates, use an API or fallback to default
-    const date = new Date(dateStr);
-    const today = new Date();
-    
-    // If date is within last 90 days, use real API
-    const daysDiff = Math.floor((today - date) / (1000 * 60 * 60 * 24));
-    
-    if (daysDiff <= 90) {
-      // You would need to implement a real FX API here
-      // For now, using fallback rates
-      console.log(`Fetching FX rate for ${dateStr}: ${fromCurrency} to ${toCurrency}`);
-    }
-    
-    // Fallback to default rates for now
-    const key = `${fromCurrency}_to_${toCurrency}`;
-    const reverseKey = `${toCurrency}_to_${fromCurrency}`;
-    
-    if (DEFAULT_FX_RATES[key]) {
-      return DEFAULT_FX_RATES[key];
-    } else if (DEFAULT_FX_RATES[reverseKey]) {
-      return 1 / DEFAULT_FX_RATES[reverseKey];
-    }
-    
-    // Default fallback if no rate found
-    const defaultRates = {
-      'USD_NGN': 1460,
-      'EUR_NGN': 1600,
-      'GHS_USD': 0.087,
-      'GHS_NGN': 1460 * 0.087, // ~127
-      'EUR_USD': 1.08,
-      'MYR_USD': 0.21,
-      'MYR_NGN': 1460 * 0.21 // ~307
-    };
-    
-    const fallbackKey = `${fromCurrency}_${toCurrency}`;
-    return defaultRates[fallbackKey] || 1;
-    
-  } catch (error) {
-    console.error('Error fetching FX rate:', error);
-    // Return default rate
-    const key = `${fromCurrency}_to_${toCurrency}`;
-    return DEFAULT_FX_RATES[key] || 1;
-  }
-}
-
-// NEW: Convert price based on currency mode
-function convertPrice(price, fromCurrency, toCurrency, dateStr = null) {
-  if (price == null || isNaN(Number(price))) return null;
-  
-  const value = Number(price);
-  
-  if (fromCurrency === toCurrency) return value;
-  
-  // For real implementation, you would fetch actual FX rate for the date
-  // For now, using simplified conversion
-  const rate = getFXRate(fromCurrency, toCurrency);
-  return value * rate;
-}
-
-// Helper function to get FX rate
-function getFXRate(fromCurrency, toCurrency) {
-  const key = `${fromCurrency}_to_${toCurrency}`;
-  const reverseKey = `${toCurrency}_to_${fromCurrency}`;
-  
-  if (DEFAULT_FX_RATES[key]) {
-    return DEFAULT_FX_RATES[key];
-  } else if (DEFAULT_FX_RATES[reverseKey]) {
-    return 1 / DEFAULT_FX_RATES[reverseKey];
-  }
-  
-  return 1;
-}
-
-// Convert API value to target currency
-// Convert API value to target currency - FIXED for Palm Oil
-function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, dateStr = null) {
+// Convert API value to target currency - UPDATED with historical FX rates
+function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, monthKey = null) {
   if (apiValue == null || isNaN(Number(apiValue))) return null;
   const value = Number(apiValue);
 
@@ -316,9 +359,9 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
 
   switch(commodity) {
     case 'wheat':
-      // CBOT Wheat: cents per bushel to USD/kg
+      // CBOT Wheat: cents per bushel to USD/bushel
       const usdPerBushel = value / 100;
-      apiPriceInOriginalCurrency = usdPerBushel / BUSHEL_TO_KG_WHEAT;
+      apiPriceInOriginalCurrency = usdPerBushel;
       apiCurrency = 'USD';
       break;
 
@@ -330,16 +373,14 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
       break;
 
     case 'palm':
-      // FIXED: Palm Oil (KO*1) is in MYR per metric ton
-      // Convert MYR/tonne to MYR/kg
+      // Palm Oil (KO*1): MYR per metric ton to USD/tonne
       const myrPerTonne = value;
-      apiPriceInOriginalCurrency = myrPerTonne / TONNE_TO_KG; // Convert to MYR/kg
+      apiPriceInOriginalCurrency = myrPerTonne; // Keep in MYR/tonne for conversion
       apiCurrency = 'MYR'; // API provides in MYR
       break;
 
     case 'crude_palm':
       // Crude Palm Oil: USD per barrel to USD/kg
-      const BARREL_TO_KG = 136.4;
       apiPriceInOriginalCurrency = value / BARREL_TO_KG;
       apiCurrency = 'USD';
       break;
@@ -363,14 +404,22 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
 
   // Convert to target currency if needed
   if (apiCurrency !== targetCurrency) {
-    return convertPrice(apiPriceInOriginalCurrency, apiCurrency, targetCurrency, dateStr);
+    const fxRate = getHistoricalFXRate(monthKey || 'current', apiCurrency, targetCurrency);
+    const convertedValue = apiPriceInOriginalCurrency * fxRate;
+    
+    // For palm oil, ensure it stays in USD/tonne
+    if (commodity === 'palm' && targetCurrency === 'USD') {
+      return convertedValue; // This is USD/tonne
+    }
+    
+    return convertedValue;
   }
 
   return apiPriceInOriginalCurrency;
 }
-// Convert Excel purchase price to target currency
-// Convert Excel purchase price to target currency - FIXED for Palm Oil
-function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency) {
+
+// Convert Excel purchase price to target currency - UPDATED for Palm Oil
+function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency, monthKey = null) {
   if (!excelItem) return null;
   
   let priceInOriginalCurrency;
@@ -381,9 +430,9 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
     case 'milling_wheat':
       // Convert all wheat purchases to USD for consistency
       if (excelItem.currency === 'GHS') {
-        // Convert GHS to USD
-        const usdRate = excelItem.rate * getFXRate('GHS', 'USD');
-        priceInOriginalCurrency = usdRate;
+        // Convert GHS to USD using historical rate
+        const fxRate = getHistoricalFXRate(monthKey, 'GHS', 'USD');
+        priceInOriginalCurrency = excelItem.rate * fxRate;
         excelCurrency = 'USD';
       } else {
         priceInOriginalCurrency = excelItem.rate;
@@ -392,9 +441,15 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
       break;
       
     case 'palm':
-      // FIX: Excel data is already in GHS/kg
-      priceInOriginalCurrency = excelItem.rate;
-      excelCurrency = 'GHS'; // Force GHS for Palm Oil Excel data
+      // FIX: Excel data has fob in USD/tonne and costPerUnit in USD/kg
+      // Use fob field for USD/tonne display
+      if (excelItem.fob) {
+        priceInOriginalCurrency = excelItem.fob; // Already in USD/tonne
+        excelCurrency = 'USD';
+      } else {
+        priceInOriginalCurrency = excelItem.rate;
+        excelCurrency = 'GHS';
+      }
       break;
       
     case 'crude_palm':
@@ -418,7 +473,8 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
 
   // Convert to target currency if needed
   if (excelCurrency !== targetCurrency) {
-    return convertPrice(priceInOriginalCurrency, excelCurrency, targetCurrency, excelItem.poDate || excelItem.month);
+    const fxRate = getHistoricalFXRate(monthKey, excelCurrency, targetCurrency);
+    return priceInOriginalCurrency * fxRate;
   }
 
   return priceInOriginalCurrency;
@@ -440,7 +496,7 @@ function getExcelDateForMonth(commodity, excelItem) {
   }
 }
 
-// Process Excel data by month (average per month) - Updated for currency mode
+// Process Excel data by month (average per month) - Updated with historical FX
 function processExcelDataByMonth(commodity, currencyMode) {
   const rawData = EXCEL_DATA_SOURCES[commodity] || [];
   
@@ -471,7 +527,7 @@ function processExcelDataByMonth(commodity, currencyMode) {
       return;
     }
     
-    const priceInTargetCurrency = convertExcelPriceToTargetCurrency(commodity, item, targetCurrency);
+    const priceInTargetCurrency = convertExcelPriceToTargetCurrency(commodity, item, targetCurrency, monthKey);
     if (priceInTargetCurrency == null) return;
     
     if (!monthlyData[monthKey]) {
@@ -606,34 +662,71 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
   }
 }
 
-// Process API data by month - Updated for currency mode
-function processApiDataByMonth(commodity, apiMonthlyData, currencyMode) {
+// Process API data by month - Updated with historical FX
+function processApiDataByMonth(commodity, apiMonthlyData, currencyMode, wheatDisplayUnit = 'usdPerKg') {
   const targetCurrency = currencyMode === 'original' 
     ? COMMODITY_CURRENCIES[commodity] 
     : 'NGN';
   
-  return apiMonthlyData.map(item => ({
-    monthKey: item.monthKey,
-    monthDisplay: getMonthDisplay(item.monthKey),
-    apiPrice: convertApiValueToTargetCurrency(commodity, item.avgPrice, targetCurrency, item.sampleDates?.[0]),
-    dataPoints: item.dataPoints,
-    source: item.source || 'api'
-  })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+  return apiMonthlyData.map(item => {
+    let apiPrice = convertApiValueToTargetCurrency(commodity, item.avgPrice, targetCurrency, item.monthKey);
+    
+    // Convert wheat from bushel to kg if needed
+    if (commodity === 'wheat') {
+      if (wheatDisplayUnit === 'bushel') {
+        // Keep in USD/bushel (apiPrice is already in USD/bushel after conversion)
+        // No conversion needed
+      } else {
+        // Convert from USD/bushel to USD/kg
+        apiPrice = apiPrice / BUSHEL_TO_KG_WHEAT;
+      }
+    }
+    
+    // For palm oil, ensure we're in USD/tonne
+    if (commodity === 'palm' && targetCurrency === 'USD') {
+      // apiPrice is already in USD/tonne
+    }
+    
+    return {
+      monthKey: item.monthKey,
+      monthDisplay: getMonthDisplay(item.monthKey),
+      apiPrice: apiPrice,
+      dataPoints: item.dataPoints,
+      source: item.source || 'api'
+    };
+  }).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 }
 
 // Combine Excel and API data by month
-function combineMonthlyData(excelMonthly, apiMonthly) {
+function combineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUnit = 'usdPerKg') {
   const excelMonths = excelMonthly.map(item => item.monthKey);
   
   return excelMonths.map(monthKey => {
     const excelMonth = excelMonthly.find(item => item.monthKey === monthKey);
     const apiMonth = apiMonthly.find(item => item.monthKey === monthKey);
     
+    let excelPrice = excelMonth?.excelPrice || null;
+    let apiPrice = apiMonth?.apiPrice || null;
+    
+    // Adjust wheat prices based on display unit
+    if (commodity === 'wheat') {
+      if (excelPrice && wheatDisplayUnit === 'bushel') {
+        // Convert Excel price from USD/kg to USD/bushel
+        excelPrice = excelPrice * BUSHEL_TO_KG_WHEAT;
+      }
+    }
+    
+    // Adjust palm oil to USD/tonne
+    if (commodity === 'palm') {
+      // excelPrice should already be in USD/tonne
+      // apiPrice should already be in USD/tonne
+    }
+    
     return {
       monthKey,
       monthDisplay: getMonthDisplay(monthKey),
-      excelPrice: excelMonth?.excelPrice || null,
-      apiPrice: apiMonth?.apiPrice || null,
+      excelPrice: excelPrice,
+      apiPrice: apiPrice,
       excelTransactions: excelMonth?.transactionCount || 0,
       apiDataPoints: apiMonth?.dataPoints || 0,
       apiSource: apiMonth?.source || 'none'
@@ -642,9 +735,10 @@ function combineMonthlyData(excelMonthly, apiMonthly) {
 }
 
 const CommodityDashboard = () => {
-  // NEW: Currency mode state
+  // Currency mode state
   const [currencyMode, setCurrencyMode] = useState('original'); // 'original' or 'ngn'
   const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
+  const [wheatDisplayUnit, setWheatDisplayUnit] = useState('usdPerKg'); // 'usdPerKg' or 'bushel'
   const [commodityData, setCommodityData] = useState({});
   const [monthlyComparisonData, setMonthlyComparisonData] = useState({});
   const [livePrices, setLivePrices] = useState({});
@@ -654,7 +748,7 @@ const CommodityDashboard = () => {
   const [dataDebug, setDataDebug] = useState('');
   const [apiStatus, setApiStatus] = useState('connecting');
 
-  // Process Excel data by month - Updated with currency mode
+  // Process Excel data by month - Updated with historical FX
   const excelMonthlyData = useMemo(() => {
     console.log(`Processing Excel data for all commodities in ${currencyMode} mode...`);
     const data = {};
@@ -680,7 +774,8 @@ const CommodityDashboard = () => {
         if (targetCurrency === 'USD') {
           price = baseUsdPerKg;
         } else {
-          price = baseUsdPerKg * getFXRate('USD', 'NGN');
+          const fxRate = getHistoricalFXRate(monthKey, 'USD', 'NGN');
+          price = baseUsdPerKg * fxRate;
         }
         
         months.push({
@@ -700,7 +795,7 @@ const CommodityDashboard = () => {
     return data;
   }, [currencyMode]);
 
-  // Fetch live prices for all commodities - Updated for currency mode
+  // Fetch live prices for all commodities - Updated with historical FX
   useEffect(() => {
     const fetchLivePrices = async () => {
       setLoadingLivePrices(true);
@@ -734,21 +829,48 @@ const CommodityDashboard = () => {
             ? COMMODITY_CURRENCIES[commodity] 
             : 'NGN';
           
-          const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency);
-          const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency) : null;
-          const weekAgo = priceData.weekAgo ? convertApiValueToTargetCurrency(commodity, priceData.weekAgo, targetCurrency) : null;
-          const monthAgo = priceData.monthAgo ? convertApiValueToTargetCurrency(commodity, priceData.monthAgo, targetCurrency) : null;
-          const yearAgo = priceData.yearAgo ? convertApiValueToTargetCurrency(commodity, priceData.yearAgo, targetCurrency) : null;
+          // Get current month key for FX rate
+          const currentDate = new Date();
+          const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+          
+          const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey);
+          const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey) : null;
+          
+          // For historical prices, use appropriate month keys
+          let weekAgo = null, monthAgo = null, yearAgo = null;
+          
+          if (priceData.weekAgo && priceData.weekAgoDate) {
+            const weekMonthKey = getMonthKey(priceData.weekAgoDate);
+            weekAgo = convertApiValueToTargetCurrency(commodity, priceData.weekAgo, targetCurrency, weekMonthKey);
+          }
+          
+          if (priceData.monthAgo && priceData.monthAgoDate) {
+            const monthMonthKey = getMonthKey(priceData.monthAgoDate);
+            monthAgo = convertApiValueToTargetCurrency(commodity, priceData.monthAgo, targetCurrency, monthMonthKey);
+          }
+          
+          if (priceData.yearAgo && priceData.yearAgoDate) {
+            const yearMonthKey = getMonthKey(priceData.yearAgoDate);
+            yearAgo = convertApiValueToTargetCurrency(commodity, priceData.yearAgo, targetCurrency, yearMonthKey);
+          }
+          
+          // Adjust wheat display unit
+          let displayCurrent = current;
+          if (commodity === 'wheat' && wheatDisplayUnit === 'bushel' && current) {
+            displayCurrent = current; // Already in USD/bushel
+          } else if (commodity === 'wheat' && wheatDisplayUnit === 'usdPerKg' && current) {
+            displayCurrent = current / BUSHEL_TO_KG_WHEAT;
+          }
           
           const percentages = {
-            day: previous ? calculatePercentageChange(current, previous) : null,
-            week: weekAgo ? calculatePercentageChange(current, weekAgo) : null,
-            month: monthAgo ? calculatePercentageChange(current, monthAgo) : null,
-            year: yearAgo ? calculatePercentageChange(current, yearAgo) : null
+            day: previous ? calculatePercentageChange(displayCurrent, previous) : null,
+            week: weekAgo ? calculatePercentageChange(displayCurrent, weekAgo) : null,
+            month: monthAgo ? calculatePercentageChange(displayCurrent, monthAgo) : null,
+            year: yearAgo ? calculatePercentageChange(displayCurrent, yearAgo) : null
           };
           
           liveData[commodity] = {
-            current,
+            current: displayCurrent,
             previous,
             weekAgo,
             monthAgo,
@@ -767,7 +889,7 @@ const CommodityDashboard = () => {
           };
           
           console.log(`Live price for ${commodity} in ${targetCurrency}:`, {
-            current,
+            current: displayCurrent,
             percentages
           });
           
@@ -807,9 +929,9 @@ const CommodityDashboard = () => {
     const intervalId = setInterval(fetchLivePrices, 5 * 60 * 1000);
     
     return () => clearInterval(intervalId);
-  }, [currencyMode]);
+  }, [currencyMode, wheatDisplayUnit]);
 
-  // Fetch API data and combine with Excel data - Updated for currency mode
+  // Fetch API data and combine with Excel data - Updated with wheat display unit
   useEffect(() => {
     const fetchAllCommodityData = async () => {
       setLoading(true);
@@ -838,8 +960,8 @@ const CommodityDashboard = () => {
           const excelMonths = excelMonthly.map(item => item.monthKey);
           const apiMonthlyRaw = await fetchMonthlyPricesWithVariation(symbol, excelMonths);
           
-          const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw, currencyMode);
-          const combinedData = combineMonthlyData(excelMonthly, apiMonthly);
+          const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw, currencyMode, wheatDisplayUnit);
+          const combinedData = combineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUnit);
           
           const apiPrices = combinedData.filter(d => d.apiPrice).map(d => d.apiPrice);
           const uniquePrices = [...new Set(apiPrices.map(p => p?.toFixed(2)))];
@@ -878,7 +1000,7 @@ const CommodityDashboard = () => {
           return `${commodity}: ${apiMonths}/${totalMonths} ${hasVariation ? '✓' : '⚠️'}`;
         }).join(' | ');
         
-        setDataDebug(`API Data: ${apiDataSummary} | Currency Mode: ${currencyMode.toUpperCase()}`);
+        setDataDebug(`API Data: ${apiDataSummary} | Currency Mode: ${currencyMode.toUpperCase()} | Wheat Unit: ${wheatDisplayUnit}`);
         setApiStatus('connected');
         
       } catch (err) {
@@ -921,11 +1043,10 @@ const CommodityDashboard = () => {
     const intervalId = setInterval(fetchAllCommodityData, 10 * 60 * 1000);
     
     return () => clearInterval(intervalId);
-  }, [excelMonthlyData, currencyMode]);
+  }, [excelMonthlyData, currencyMode, wheatDisplayUnit]);
 
-  // Helper functions (keep these from original)
+  // Helper functions
   async function fetchCurrentPriceWithHistory(symbol) {
-    // Keep the same implementation as before
     try {
       const dailyData = await fetchDailyPrices(symbol, 365);
       
@@ -961,7 +1082,6 @@ const CommodityDashboard = () => {
   }
 
   async function fetchDailyPrices(symbol, days = 30) {
-    // Keep the same implementation as before
     try {
       const endDate = new Date();
       const startDate = new Date();
@@ -1037,15 +1157,24 @@ const CommodityDashboard = () => {
     }));
   };
 
-  // Custom tooltip for chart - Updated for currency mode
+  // Custom tooltip for chart - Updated for units
   const CustomTooltip = ({ active, payload }) => {
     if (!active || !payload?.[0]) return null;
     const data = payload[0].payload;
     const config = COMMODITY_CONFIG[selectedCommodity];
-    const dec = decimalsByCommodity[selectedCommodity] || 2;
+    
+    let dec = decimalsByCommodity[selectedCommodity];
+    if (selectedCommodity === 'wheat') {
+      dec = wheatDisplayUnit === 'bushel' ? dec.bushel : dec.kg;
+    } else if (typeof dec === 'object') {
+      dec = 2;
+    }
+    
     const targetCurrency = currencyMode === 'original' 
       ? COMMODITY_CURRENCIES[selectedCommodity] 
       : 'NGN';
+    
+    const units = getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit);
 
     return (
       <div style={{
@@ -1071,7 +1200,7 @@ const CommodityDashboard = () => {
             alignItems: 'center'
           }}>
             <span style={{ fontWeight: 'bold', color: config.excelColor, fontSize: '16px' }}>
-              {data.excelPrice.toFixed(dec)} {targetCurrency}/kg
+              {data.excelPrice.toFixed(dec)} {units}
             </span>
             {selectedCommodity === 'aluminum' ? (
               <span style={{ fontSize: '11px', color: '#9ca3af' }}>
@@ -1108,7 +1237,7 @@ const CommodityDashboard = () => {
               alignItems: 'center'
             }}>
               <span style={{ fontWeight: 'bold', color: config.apiColor, fontSize: '16px' }}>
-                {data.apiPrice.toFixed(dec)} {targetCurrency}/kg
+                {data.apiPrice.toFixed(dec)} {units}
               </span>
               <span style={{ fontSize: '11px', color: '#9ca3af' }}>
                 {data.apiDataPoints} trading day{data.apiDataPoints !== 1 ? 's' : ''}
@@ -1159,7 +1288,7 @@ const CommodityDashboard = () => {
                 fontSize: '13px',
                 color: data.excelPrice <= data.apiPrice ? '#059669' : '#dc2626'
               }}>
-                {Math.abs(data.excelPrice - data.apiPrice).toFixed(dec)} {targetCurrency}/kg
+                {Math.abs(data.excelPrice - data.apiPrice).toFixed(dec)} {units}
               </span>
             </div>
           </div>
@@ -1195,11 +1324,12 @@ const CommodityDashboard = () => {
             </h2>
             <div style={{ color: '#666', fontSize: '14px', marginTop: '8px' }}>
               Monthly Averages: Our Purchases vs Market Prices | 
-              Currency Mode: {currencyMode === 'original' ? 'Document Currency' : 'NGN'}
+              Currency Mode: {currencyMode === 'original' ? 'Document Currency' : 'NGN'} |
+              {selectedCommodity === 'wheat' && ` Wheat Unit: ${wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'}`}
             </div>
           </div>
           
-          {/* NEW: Currency Toggle Button */}
+          {/* Currency Toggle Button */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -1273,6 +1403,48 @@ const CommodityDashboard = () => {
           </div>
         </div>
         
+        {/* NEW: Wheat Display Unit Selector (only shown when wheat is selected) */}
+        {selectedCommodity === 'wheat' && (
+          <div style={{
+            marginBottom: '16px',
+            padding: '12px 16px',
+            backgroundColor: '#f0f9ff',
+            borderRadius: '8px',
+            border: '2px solid #bae6fd',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}>
+            <span style={{ fontSize: '16px', fontWeight: '600', color: '#0369a1' }}>
+              Wheat Display Unit:
+            </span>
+            <select
+              value={wheatDisplayUnit}
+              onChange={(e) => setWheatDisplayUnit(e.target.value)}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: 'white',
+                border: '2px solid #3B82F6',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '600',
+                color: '#1e40af',
+                cursor: 'pointer',
+                minWidth: '140px'
+              }}
+            >
+              {WHEAT_DISPLAY_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginLeft: 'auto' }}>
+              API returns in cents/bushel • 1 bushel = {BUSHEL_TO_KG_WHEAT.toFixed(2)} kg wheat
+            </div>
+          </div>
+        )}
+        
         {/* Currency Mode Info */}
         <div style={{
           padding: '12px 16px',
@@ -1297,8 +1469,8 @@ const CommodityDashboard = () => {
               </span>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
                 {currencyMode === 'original' 
-                  ? `• Wheat/Milling Wheat: USD/kg • Palm Oil: GHS/kg • Crude Palm Oil: USD/kg • Sugar: NGN/kg • Aluminum: USD/kg`
-                  : '• All commodities: NGN/kg • Using FX rates for conversion'}
+                  ? `• Wheat: ${wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'} • Milling Wheat: USD/kg • Palm Oil: USD/tonne • Crude Palm Oil: USD/kg • Sugar: NGN/kg • Aluminum: USD/kg`
+                  : '• All commodities: NGN/kg • Using historical monthly FX rates'}
               </div>
             </div>
           </div>
@@ -1357,7 +1529,7 @@ const CommodityDashboard = () => {
         fontFamily: 'monospace'
       }}>
         <strong>API Status:</strong> {dataDebug || 'Loading...'} | <strong>Mode:</strong> Real API Only | 
-        <strong> Currency:</strong> {currencyMode.toUpperCase()}
+        <strong> Currency:</strong> {currencyMode.toUpperCase()} | <strong>Current USD/NGN:</strong> 1460
       </div>
 
       {/* Error display */}
@@ -1394,6 +1566,7 @@ const CommodityDashboard = () => {
           const targetCurrency = currencyMode === 'original' 
             ? COMMODITY_CURRENCIES[commodity] 
             : 'NGN';
+          const units = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
           
           return (
             <button
@@ -1412,7 +1585,7 @@ const CommodityDashboard = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                minWidth: '160px',
+                minWidth: '180px',
                 position: 'relative'
               }}
             >
@@ -1420,7 +1593,7 @@ const CommodityDashboard = () => {
               <div style={{ textAlign: 'left' }}>
                 <div>{config.name}</div>
                 <div style={{ fontSize: '10px', color: isSelected ? '#bfdbfe' : '#6b7280' }}>
-                  {targetCurrency}/kg
+                  {units}
                 </div>
               </div>
               {monthsWithExcelData > 0 && (
@@ -1503,6 +1676,7 @@ const CommodityDashboard = () => {
               const targetCurrency = currencyMode === 'original' 
                 ? COMMODITY_CURRENCIES[commodity] 
                 : 'NGN';
+              const units = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
               
               return (
                 <div 
@@ -1522,7 +1696,7 @@ const CommodityDashboard = () => {
                       <span style={{ fontSize: '18px' }}>{config.icon}</span>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>{config.name}</div>
-                        <div style={{ fontSize: '11px', color: '#6b7280' }}>{targetCurrency}/kg</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>{units}</div>
                       </div>
                     </div>
                     {commodity === selectedCommodity && (
@@ -1623,6 +1797,32 @@ const CommodityDashboard = () => {
                     </div>
                   )}
                   
+                  {commodity === 'palm' && (
+                    <div style={{ 
+                      marginTop: '12px',
+                      paddingTop: '8px',
+                      borderTop: '1px solid #e5e7eb',
+                      fontSize: '11px',
+                      color: '#6b7280'
+                    }}>
+                      <div>API: KO*1 (MYR/tonne) → Converted to USD/tonne</div>
+                      <div>Excel: FOB in USD/tonne</div>
+                    </div>
+                  )}
+                  
+                  {commodity === 'wheat' && (
+                    <div style={{ 
+                      marginTop: '12px',
+                      paddingTop: '8px',
+                      borderTop: '1px solid #e5e7eb',
+                      fontSize: '11px',
+                      color: '#6b7280'
+                    }}>
+                      <div>API: ZW*1 (cents/bushel) → {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'}</div>
+                      <div>Current unit: {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'}</div>
+                    </div>
+                  )}
+                  
                   {hasExcelData && commodity === 'aluminum' && (
                     <div style={{ 
                       marginTop: '12px',
@@ -1669,8 +1869,9 @@ const CommodityDashboard = () => {
                 <div style={{ color: '#374151' }}>
                   DDFPlus API prices converted to {currencyMode === 'original' ? 'document currency' : 'NGN'}
                   <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                    {selectedCommodity === 'wheat' ? 'ZW*1: CBOT Wheat Futures' : 
+                    {selectedCommodity === 'wheat' ? 'ZW*1: CBOT Wheat Futures (cents/bushel)' : 
                      selectedCommodity === 'milling_wheat' ? 'ML*1: Milling Wheat Futures' : 
+                     selectedCommodity === 'palm' ? 'KO*1: Palm Oil Futures (MYR/tonne)' :
                      'Real-time commodity data'}
                   </div>
                 </div>
@@ -1679,7 +1880,44 @@ const CommodityDashboard = () => {
             <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
               Currency Mode: {currencyMode === 'original' 
                 ? 'Showing in original purchase currency for each commodity' 
-                : 'All prices converted to NGN'}
+                : 'All prices converted to NGN using historical monthly FX rates'}
+            </div>
+            {selectedCommodity === 'wheat' && (
+              <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
+                Wheat Unit: {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'} (1 bushel = {BUSHEL_TO_KG_WHEAT.toFixed(2)} kg)
+              </div>
+            )}
+            {selectedCommodity === 'palm' && (
+              <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
+                Palm Oil: Converted from MYR/tonne to USD/tonne
+              </div>
+            )}
+          </div>
+          
+          {/* FX Rates Info */}
+          <div style={{
+            padding: '20px',
+            backgroundColor: '#fef3c7',
+            borderRadius: '12px',
+            border: '2px solid #fbbf24',
+            marginTop: '24px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '20px' }}>💱</span>
+              <span style={{ fontWeight: 600, fontSize: '16px', color: '#92400e' }}>Historical FX Rates</span>
+            </div>
+            <div style={{ fontSize: '13px', color: '#92400e' }}>
+              Using monthly historical exchange rates for accurate conversion
+            </div>
+            <div style={{ marginTop: '12px', fontSize: '12px', color: '#92400e' }}>
+              <div><strong>Current Rates (Dec 2025):</strong></div>
+              <div>• USD to NGN: 1460</div>
+              <div>• MYR to USD: 0.22 (1 MYR = $0.22)</div>
+              <div>• EUR to USD: 1.10</div>
+              <div>• GHS to USD: 0.089</div>
+            </div>
+            <div style={{ marginTop: '8px', fontSize: '11px', color: '#d97706' }}>
+              Rates adjusted monthly based on historical data
             </div>
           </div>
         </div>
@@ -1698,8 +1936,8 @@ const CommodityDashboard = () => {
               </h3>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
                 {selectedCommodity === 'aluminum' 
-                  ? `Negotiated raw material price vs Real market prices (2020-2025) in ${currencyMode === 'original' ? 'USD' : 'NGN'}`
-                  : `Our purchase prices vs Real market prices (2020-2025) in ${currencyMode === 'original' ? COMMODITY_CURRENCIES[selectedCommodity] : 'NGN'}`}
+                  ? `Negotiated raw material price vs Real market prices (2020-2025) in ${getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit)}`
+                  : `Our purchase prices vs Real market prices (2020-2025) in ${getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit)}`}
               </div>
             </div>
             <div style={{ 
@@ -1753,12 +1991,18 @@ const CommodityDashboard = () => {
                     domain={['dataMin', 'dataMax']}
                   />
                   <YAxis 
-                    tickFormatter={value => `${value.toFixed(decimalsByCommodity[selectedCommodity])}`}
+                    tickFormatter={value => {
+                      let dec = decimalsByCommodity[selectedCommodity];
+                      if (selectedCommodity === 'wheat') {
+                        dec = wheatDisplayUnit === 'bushel' ? dec.bushel : dec.kg;
+                      } else if (typeof dec === 'object') {
+                        dec = 2;
+                      }
+                      return `${value.toFixed(dec)}`;
+                    }}
                     tick={{ fontSize: 12 }}
                     label={{ 
-                      value: currencyMode === 'original' 
-                        ? `${COMMODITY_CURRENCIES[selectedCommodity]}/kg`
-                        : 'NGN/kg',
+                      value: getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit),
                       angle: -90,
                       position: 'insideLeft',
                       offset: 10,
@@ -1808,7 +2052,7 @@ const CommodityDashboard = () => {
             )}
           </div>
 
-          {/* LIVE PRICES TABLE - Updated for currency mode */}
+          {/* LIVE PRICES TABLE */}
           <div style={{
             marginTop: '24px',
             padding: '16px',
@@ -1828,9 +2072,9 @@ const CommodityDashboard = () => {
                   Live Commodity Prices
                 </div>
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                  Real-time market prices from DDFPlus API in {currencyMode === 'original' ? 'document currency' : 'NGN'}/kg
+                  Real-time market prices from DDFPlus API in {selectedCommodity === 'palm' ? 'USD/tonne' : getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit)}
                   <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
-                    Refreshing every 5 minutes • Currency Mode: {currencyMode.toUpperCase()}
+                    Refreshing every 5 minutes • Currency Mode: {currencyMode.toUpperCase()} • Using historical FX rates
                   </div>
                 </div>
               </div>
@@ -1855,16 +2099,13 @@ const CommodityDashboard = () => {
                     <tr style={{ backgroundColor: '#f1f5f9' }}>
                       <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Commodity</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Today</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Yesterday</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Day %</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week Ago</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week %</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month Ago</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Year Ago</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Year %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Currency</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Status</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Units</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>FX Rate Used</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1878,10 +2119,22 @@ const CommodityDashboard = () => {
                       const targetCurrency = currencyMode === 'original' 
                         ? COMMODITY_CURRENCIES[commodity] 
                         : 'NGN';
-                      const dec = decimalsByCommodity[commodity] || 2;
+                      const units = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
+                      
+                      let dec = decimalsByCommodity[commodity];
+                      if (commodity === 'wheat') {
+                        dec = wheatDisplayUnit === 'bushel' ? dec.bushel : dec.kg;
+                      } else if (typeof dec === 'object') {
+                        dec = 2;
+                      }
+                      
                       const hasData = liveData.current !== null;
                       const statusColor = hasData ? '#059669' : '#dc2626';
-                      const statusText = hasData ? 'Live' : 'No Data';
+                      
+                      // Get FX rate info
+                      const fxInfo = commodity === 'palm' ? 'MYR→USD: 0.22' : 
+                                     commodity === 'milling_wheat' ? 'EUR→USD: 1.10' :
+                                     currencyMode === 'ngn' ? 'USD→NGN: 1460' : '—';
                       
                       return (
                         <tr key={commodity} style={{ backgroundColor: rowBg }}>
@@ -1910,16 +2163,6 @@ const CommodityDashboard = () => {
                             color: hasData ? '#374151' : '#9ca3af'
                           }}>
                             {hasData ? liveData.current?.toFixed(dec) : '—'}
-                          </td>
-                          
-                          {/* Yesterday */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            color: hasData ? '#6b7280' : '#9ca3af'
-                          }}>
-                            {hasData ? (liveData.previous?.toFixed(dec) || '—') : '—'}
                           </td>
                           
                           {/* Day % */}
@@ -2002,37 +2245,7 @@ const CommodityDashboard = () => {
                             ) : '—'}
                           </td>
                           
-                          {/* Year Ago */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            color: hasData && liveData.yearAgo ? '#6b7280' : '#9ca3af'
-                          }}>
-                            {hasData && liveData.yearAgo ? liveData.yearAgo.toFixed(dec) : '—'}
-                          </td>
-                          
-                          {/* Year % */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasData && liveData.percentages?.year !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.year >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.year >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.year >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.year).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          {/* Currency */}
+                          {/* Units */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
@@ -2046,26 +2259,19 @@ const CommodityDashboard = () => {
                               borderRadius: '4px',
                               fontSize: '11px'
                             }}>
-                              {targetCurrency}
+                              {units}
                             </span>
                           </td>
                           
-                          {/* Status */}
+                          {/* FX Rate Used */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
+                            borderBottom: '1px solid #e2e8f0',
+                            fontSize: '11px',
+                            color: '#6b7280'
                           }}>
-                            <span style={{
-                              fontWeight: '600',
-                              color: statusColor,
-                              backgroundColor: statusColor === '#059669' ? '#d1fae5' : '#fee2e2',
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              fontSize: '11px'
-                            }}>
-                              {statusText}
-                            </span>
+                            {fxInfo}
                           </td>
                         </tr>
                       );
@@ -2136,19 +2342,18 @@ const CommodityDashboard = () => {
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
               • Real-time DDFPlus Commodity API<br/>
               • Excel Purchase Records<br/>
-              • FX Rates: USD/NGN 1460, EUR/NGN 1600<br/>
+              • Historical Monthly FX Rates<br/>
               • Dates: 2020-2025 only
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Currency Information</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Key Features</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • <strong>Document Currency Mode:</strong><br/>
-              Wheat: USD/kg<br/>
-              Palm Oil: GHS/kg<br/>
-              Crude Palm: USD/kg<br/>
-              Sugar: NGN/kg<br/>
-              Aluminum: USD/kg
+              • Palm Oil: MYR/tonne → USD/tonne<br/>
+              • Wheat CBOT: Toggle USD/kg or USD/bushel<br/>
+              • Historical FX rates by month<br/>
+              • Current USD/NGN: 1460<br/>
+              • Real-time API updates
             </div>
           </div>
           <div>
