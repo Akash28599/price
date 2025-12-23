@@ -25,6 +25,7 @@ const COMMODITY_SYMBOLS = {
 };
 
 // Exchange rates - will be fetched dynamically
+// Exchange rates - will be fetched dynamically
 const DEFAULT_FX_RATES = {
   USD_to_NGN: 1460,
   EUR_to_NGN: 1600,
@@ -33,9 +34,12 @@ const DEFAULT_FX_RATES = {
   MYR_to_USD: 0.21,
   USD_to_MYR: 4.76,
   EUR_to_USD: 1.08,
-  MYR_to_NGN: 350
+  MYR_to_NGN: 350,
+  // ADD THESE FOR BETTER PALM OIL CONVERSION
+  GHS_to_NGN: 127, // GHS 1 = NGN 127 (approx)
+  MYR_to_GHS: 3.5, // MYR 1 = GHS 3.5 (approx)
+  MYR_to_NGN: 445  // MYR 1 = NGN 445 (MYR to GHS then GHS to NGN)
 };
-
 // Conversion factors
 const BUSHEL_TO_KG_WHEAT = 27.2155;
 const TONNE_TO_KG = 1000;
@@ -43,10 +47,11 @@ const LB_TO_KG = 0.45359237;
 const ALUMINUM_CAN_WEIGHT_KG = 0.013;
 
 // Currency configuration for each commodity
+// Currency configuration for each commodity
 const COMMODITY_CURRENCIES = {
   wheat: 'USD',
   milling_wheat: 'USD',
-  palm: 'GHS',
+  palm: 'GHS', // Excel data is in GHS
   crude_palm: 'USD',
   sugar: 'NGN',
   aluminum: 'USD'
@@ -301,6 +306,7 @@ function getFXRate(fromCurrency, toCurrency) {
 }
 
 // Convert API value to target currency
+// Convert API value to target currency - FIXED for Palm Oil
 function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, dateStr = null) {
   if (apiValue == null || isNaN(Number(apiValue))) return null;
   const value = Number(apiValue);
@@ -324,10 +330,11 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
       break;
 
     case 'palm':
-      // Palm Oil: MYR per tonne to MYR/kg
+      // FIXED: Palm Oil (KO*1) is in MYR per metric ton
+      // Convert MYR/tonne to MYR/kg
       const myrPerTonne = value;
-      apiPriceInOriginalCurrency = myrPerTonne / 1000;
-      apiCurrency = 'MYR';
+      apiPriceInOriginalCurrency = myrPerTonne / TONNE_TO_KG; // Convert to MYR/kg
+      apiCurrency = 'MYR'; // API provides in MYR
       break;
 
     case 'crude_palm':
@@ -361,8 +368,8 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
 
   return apiPriceInOriginalCurrency;
 }
-
 // Convert Excel purchase price to target currency
+// Convert Excel purchase price to target currency - FIXED for Palm Oil
 function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency) {
   if (!excelItem) return null;
   
@@ -385,8 +392,9 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
       break;
       
     case 'palm':
+      // FIX: Excel data is already in GHS/kg
       priceInOriginalCurrency = excelItem.rate;
-      excelCurrency = excelItem.currency || 'GHS';
+      excelCurrency = 'GHS'; // Force GHS for Palm Oil Excel data
       break;
       
     case 'crude_palm':
