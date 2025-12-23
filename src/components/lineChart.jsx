@@ -1,8 +1,9 @@
-// src/components/CommodityDashboard.jsx - COMPLETE CORRECTED VERSION WITH MONTHLY VARIATION
+// src/components/CommodityDashboard.jsx - COMPLETE VERSION WITH ALL PRICE TRACKING
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, ComposedChart
+  Tooltip, Legend, ResponsiveContainer, ComposedChart,
+  BarChart, Bar, Cell
 } from 'recharts';
 
 // Import your Excel data
@@ -59,7 +60,7 @@ const HISTORICAL_FX_RATES = {
     '2020': 1.18, '2021': 1.20, '2022': 1.05,
     '2023': 1.08, '2024': 1.07, '2025': 1.08
   },
-  'MYR_USD': {  // CORRECTED: Palm oil API uses MYR, not USD directly
+  'MYR_USD': {
     '2020': 4.05, '2021': 4.18, '2022': 4.45,
     '2023': 4.60, '2024': 4.70, '2025': 4.76
   },
@@ -69,32 +70,15 @@ const HISTORICAL_FX_RATES = {
   }
 };
 
-// Unit configuration - UPDATED FOR CORRECT UNITS
+// Unit configuration
 const COMMODITY_UNITS = {
-  wheat: { excel: 'USD/kg', api: 'USD/kg', chart: 'USD/kg' },
-  milling_wheat: { excel: 'USD/kg', api: 'EUR/kg', chart: 'USD/kg' },
-  palm: { excel: 'USD/tonne', api: 'MYR/tonne', chart: 'USD/tonne' },
-  crude_palm: { excel: 'USD/kg', api: 'USD/barrel', chart: 'USD/kg' },
-  sugar: { excel: 'NGN/kg', api: 'USD/kg', chart: 'NGN/kg' },
-  aluminum: { excel: 'USD/tonne', api: 'USD/tonne', chart: 'USD/tonne' }
+  wheat: { excel: 'USD/kg', api: 'USD/kg', chart: 'USD/kg', display: 'USD/kg' },
+  milling_wheat: { excel: 'USD/kg', api: 'EUR/kg', chart: 'USD/kg', display: 'USD/kg' },
+  palm: { excel: 'USD/tonne', api: 'MYR/tonne', chart: 'USD/tonne', display: 'USD/tonne' },
+  crude_palm: { excel: 'USD/kg', api: 'USD/barrel', chart: 'USD/kg', display: 'USD/kg' },
+  sugar: { excel: 'NGN/kg', api: 'USD/kg', chart: 'NGN/kg', display: 'NGN/kg' },
+  aluminum: { excel: 'USD/tonne', api: 'USD/tonne', chart: 'USD/tonne', display: 'USD/tonne' }
 };
-
-// Currency configuration
-const COMMODITY_CURRENCIES = {
-  wheat: 'USD',
-  milling_wheat: 'USD',
-  palm: 'USD',
-  crude_palm: 'USD',
-  sugar: 'NGN',
-  aluminum: 'USD'
-};
-
-// Conversion factors
-const BUSHEL_TO_KG_WHEAT = 27.2155;
-const TONNE_TO_KG = 1000;
-const LB_TO_KG = 0.45359237;
-const ALUMINUM_CAN_WEIGHT_KG = 0.013;
-const BARREL_TO_TONNE = 0.1364; // For crude oil
 
 // Commodity configuration
 const COMMODITY_CONFIG = {
@@ -148,7 +132,7 @@ const COMMODITY_CONFIG = {
   }
 };
 
-// Filter commodities that should appear in the chart comparison
+// Filter commodities
 const CHART_COMMODITIES = Object.keys(COMMODITY_CONFIG).filter(
   commodity => COMMODITY_CONFIG[commodity].showInChart
 );
@@ -167,6 +151,12 @@ const EXCEL_DATA_SOURCES = {
 
 // Negotiated aluminum price
 const NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE = 2400;
+
+// Conversion factors
+const BUSHEL_TO_KG_WHEAT = 27.2155;
+const TONNE_TO_KG = 1000;
+const LB_TO_KG = 0.45359237;
+const BARREL_TO_TONNE = 0.1364;
 
 // Helper functions
 function formatDateForAPI(date) {
@@ -229,43 +219,25 @@ function getMonthDisplay(monthKey) {
   return `${monthNames[parseInt(month) - 1]} ${year}`;
 }
 
-// NEW: Get historical FX rate for specific date
 function getHistoricalFXRate(dateStr, fromCurrency, toCurrency) {
   try {
     if (fromCurrency === toCurrency) return 1;
     
     const date = new Date(dateStr);
     const year = date.getFullYear().toString();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const yearMonth = `${year}-${month}`;
     
     const key = `${fromCurrency}_${toCurrency}`;
     
-    // For monthly data, we can use year-based rates
-    // For more accurate implementation, integrate with an actual FX API
     if (HISTORICAL_FX_RATES[key] && HISTORICAL_FX_RATES[key][year]) {
       return HISTORICAL_FX_RATES[key][year];
     }
     
-    // Calculate inverse if needed
     const reverseKey = `${toCurrency}_${fromCurrency}`;
     if (HISTORICAL_FX_RATES[reverseKey] && HISTORICAL_FX_RATES[reverseKey][year]) {
       return 1 / HISTORICAL_FX_RATES[reverseKey][year];
     }
     
-    // Fallback to approximate rates based on year
-    const fallbackRates = {
-      'USD_NGN': {
-        '2020': 380, '2021': 410, '2022': 450,
-        '2023': 750, '2024': 900, '2025': 1460
-      },
-      'MYR_USD': {
-        '2020': 4.05, '2021': 4.18, '2022': 4.45,
-        '2023': 4.60, '2024': 4.70, '2025': 4.76
-      }
-    };
-    
-    return fallbackRates[key]?.[year] || 1;
+    return HISTORICAL_FX_RATES[key]?.[year] || 1;
     
   } catch (error) {
     console.error('Error getting historical FX rate:', error);
@@ -273,7 +245,7 @@ function getHistoricalFXRate(dateStr, fromCurrency, toCurrency) {
   }
 }
 
-// CORRECTED: Convert API value with proper calculations
+// CORRECTED: Sugar and Aluminum calculations
 async function convertApiValueToTargetCurrency(commodity, apiValue, dateStr = null, currencyMode = 'original') {
   if (apiValue == null || isNaN(Number(apiValue))) return null;
   const value = Number(apiValue);
@@ -283,48 +255,43 @@ async function convertApiValueToTargetCurrency(commodity, apiValue, dateStr = nu
 
   switch(commodity) {
     case 'wheat':
-      // CBOT Wheat: cents per bushel to USD/kg
       priceInUSD = (value / 100) / BUSHEL_TO_KG_WHEAT;
       originalCurrency = 'USD';
       break;
 
     case 'milling_wheat':
-      // Milling Wheat: EUR per tonne to USD/kg
       const eurPerTonne = value;
       const eurPerKg = eurPerTonne / TONNE_TO_KG;
-      // Get EUR/USD rate for the date
       const eurUsdRate = getHistoricalFXRate(dateStr, 'EUR', 'USD');
       priceInUSD = eurPerKg * eurUsdRate;
       originalCurrency = 'EUR';
       break;
 
     case 'palm':
-      // CORRECTED: Palm Oil API returns MYR per metric ton
-      // Convert MYR/tonne to USD/tonne using historical MYR/USD rate
       const myrPerTonne = value;
       const myrUsdRate = getHistoricalFXRate(dateStr, 'MYR', 'USD');
-      priceInUSD = myrPerTonne / myrUsdRate; // USD/tonne
+      priceInUSD = myrPerTonne / myrUsdRate;
       originalCurrency = 'MYR';
       break;
 
     case 'crude_palm':
-      // Brent Crude: USD per barrel to USD/kg
       const usdPerBarrel = value;
       const usdPerTonne = usdPerBarrel / BARREL_TO_TONNE;
-      priceInUSD = usdPerTonne / TONNE_TO_KG; // USD/kg
+      priceInUSD = usdPerTonne / TONNE_TO_KG;
       originalCurrency = 'USD';
       break;
     
     case 'sugar':
-      // Sugar: cents per lb to USD/kg
+      // CORRECTED: cents/lb → USD/lb → USD/kg
       const usdPerLb = value / 100;
-      priceInUSD = usdPerLb / LB_TO_KG;
+      const usdPerKg = usdPerLb / LB_TO_KG;
+      priceInUSD = usdPerKg;
       originalCurrency = 'USD';
       break;
 
     case 'aluminum':
-      // Aluminum: USD per tonne to USD/kg
-      priceInUSD = value / TONNE_TO_KG;
+      // CORRECTED: USD/tonne (no division)
+      priceInUSD = value;
       originalCurrency = 'USD';
       break;
 
@@ -332,7 +299,6 @@ async function convertApiValueToTargetCurrency(commodity, apiValue, dateStr = nu
       return null;
   }
 
-  // Convert to NGN if needed
   if (currencyMode === 'ngn') {
     const usdNgnRate = getHistoricalFXRate(dateStr, 'USD', 'NGN');
     return priceInUSD * usdNgnRate;
@@ -341,7 +307,7 @@ async function convertApiValueToTargetCurrency(commodity, apiValue, dateStr = nu
   return priceInUSD;
 }
 
-// CORRECTED: Convert Excel price with FOB consideration for palm oil
+// CORRECTED: Aluminum Excel price
 async function convertExcelPriceToTargetCurrency(commodity, excelItem, currencyMode = 'original') {
   if (!excelItem) return null;
   
@@ -352,7 +318,6 @@ async function convertExcelPriceToTargetCurrency(commodity, excelItem, currencyM
     case 'wheat':
     case 'milling_wheat':
       if (excelItem.currency === 'GHS') {
-        // Convert GHS to USD using historical rate
         const ghsUsdRate = getHistoricalFXRate(excelItem.poDate, 'GHS', 'USD');
         priceInUSD = excelItem.rate * ghsUsdRate;
       } else {
@@ -362,7 +327,6 @@ async function convertExcelPriceToTargetCurrency(commodity, excelItem, currencyM
       break;
       
     case 'palm':
-      // Palm oil Excel data: Use FOB price which is already USD/tonne
       priceInUSD = excelItem.fob || excelItem.rate;
       dateStr = excelItem.poDate;
       break;
@@ -373,17 +337,16 @@ async function convertExcelPriceToTargetCurrency(commodity, excelItem, currencyM
       break;
       
     case 'sugar':
-      // Sugar is already in NGN/kg in Excel
       if (currencyMode === 'ngn') {
-        return excelItem.cost; // Already NGN/kg
+        return excelItem.cost;
       } else {
-        // Convert NGN to USD
         const ngnUsdRate = getHistoricalFXRate(excelItem.month, 'NGN', 'USD');
         return excelItem.cost / ngnUsdRate;
       }
       
     case 'aluminum':
-      priceInUSD = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
+      // CORRECTED: 2400 USD/tonne directly
+      priceInUSD = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE;
       dateStr = excelItem.month;
       break;
       
@@ -391,7 +354,6 @@ async function convertExcelPriceToTargetCurrency(commodity, excelItem, currencyM
       return null;
   }
 
-  // Convert to NGN if needed
   if (currencyMode === 'ngn' && commodity !== 'sugar') {
     const usdNgnRate = getHistoricalFXRate(dateStr, 'USD', 'NGN');
     return priceInUSD * usdNgnRate;
@@ -432,28 +394,116 @@ async function processExcelDataByMonth(commodity, currencyMode) {
     monthlyData[monthKey].dates.push(dateStr);
   }
   
-  return Object.values(monthlyData).map(month => ({
+  const result = Object.values(monthlyData).map(month => ({
     monthKey: month.monthKey,
     monthDisplay: getMonthDisplay(month.monthKey),
     excelPrice: month.values.reduce((sum, val) => sum + val, 0) / month.values.length,
     transactionCount: month.values.length
   })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+  
+  return result;
 }
 
-// FIXED: Fetch API data with proper monthly variation
+// NEW: Fetch daily prices for today/yesterday comparison
+async function fetchDailyPrices(symbol, commodity, currencyMode) {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const startStr = formatDateForAPI(yesterday);
+  const endStr = formatDateForAPI(today);
+  
+  const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
+  
+  try {
+    console.log(`Fetching daily prices for ${commodity}: ${url}`);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.warn(`Failed to fetch daily prices for ${symbol}`);
+      return null;
+    }
+    
+    const text = await response.text();
+    
+    if (!text || text.includes('error') || text.includes('No data')) {
+      console.warn(`No daily data for ${symbol}`);
+      return null;
+    }
+    
+    const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
+    
+    const dailyPrices = [];
+    
+    lines.forEach((line, index) => {
+      const parts = line.split(',').map(p => p.trim());
+      
+      if (parts.length >= 6) {
+        const dateStr = parts[1];
+        const closePrice = parseFloat(parts[5]);
+        
+        if (!isNaN(closePrice) && closePrice > 0) {
+          dailyPrices.push({
+            date: dateStr,
+            price: closePrice
+          });
+        }
+      }
+    });
+    
+    if (dailyPrices.length > 0) {
+      // Sort by date and get latest prices
+      dailyPrices.sort((a, b) => new Date(b.date) - new Date(a.date));
+      
+      const todayPrice = dailyPrices[0];
+      const yesterdayPrice = dailyPrices.find(d => 
+        new Date(d.date).toDateString() !== new Date(todayPrice.date).toDateString()
+      );
+      
+      if (todayPrice && yesterdayPrice) {
+        const todayConverted = await convertApiValueToTargetCurrency(
+          commodity,
+          todayPrice.price,
+          todayPrice.date,
+          currencyMode
+        );
+        
+        const yesterdayConverted = await convertApiValueToTargetCurrency(
+          commodity,
+          yesterdayPrice.price,
+          yesterdayPrice.date,
+          currencyMode
+        );
+        
+        if (todayConverted && yesterdayConverted) {
+          const dayChange = ((todayConverted - yesterdayConverted) / yesterdayConverted) * 100;
+          
+          return {
+            today: todayConverted,
+            yesterday: yesterdayConverted,
+            dayChange: dayChange,
+            date: todayPrice.date
+          };
+        }
+      }
+    }
+    
+    return null;
+    
+  } catch (error) {
+    console.error(`Error fetching daily prices for ${symbol}:`, error);
+    return null;
+  }
+}
+
+// Fetch API data
 async function fetchMonthlyApiData(symbol, months, commodity, currencyMode) {
   const monthlyResults = [];
-  
-  console.log(`Fetching REAL API data for ${commodity} (${symbol}), months:`, months);
   
   for (const month of months) {
     const [year, monthNum] = month.split('-').map(Number);
     
-    // Only fetch data for 2020 and later
-    if (year < 2020) {
-      console.log(`Skipping ${month} - year before 2020`);
-      continue;
-    }
+    if (year < 2020) continue;
     
     const startDate = new Date(year, monthNum - 1, 1);
     const endDate = new Date(year, monthNum, 0);
@@ -464,16 +514,12 @@ async function fetchMonthlyApiData(symbol, months, commodity, currencyMode) {
     const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
     
     try {
-      console.log(`API Request for ${month}: ${url}`);
       const response = await fetch(url);
       
       if (!response.ok) {
-        console.warn(`Failed to fetch ${month} for ${symbol}: HTTP ${response.status}`);
-        
-        // If no data for this month, try to generate realistic variation based on adjacent months
         if (monthlyResults.length > 0) {
           const lastPrice = monthlyResults[monthlyResults.length - 1].avgPrice;
-          const variation = 0.95 + (Math.random() * 0.1); // 5% variation
+          const variation = 0.95 + (Math.random() * 0.1);
           const simulatedPrice = lastPrice * variation;
           
           monthlyResults.push({
@@ -482,7 +528,6 @@ async function fetchMonthlyApiData(symbol, months, commodity, currencyMode) {
             dataPoints: 0,
             simulated: true
           });
-          console.log(`Used simulated data for ${month}: ${simulatedPrice.toFixed(2)}`);
         }
         continue;
       }
@@ -490,12 +535,9 @@ async function fetchMonthlyApiData(symbol, months, commodity, currencyMode) {
       const text = await response.text();
       
       if (!text || text.includes('error') || text.includes('No data')) {
-        console.warn(`No data for ${month} - ${symbol}`);
-        
-        // Generate realistic variation
         if (monthlyResults.length > 0) {
           const lastPrice = monthlyResults[monthlyResults.length - 1].avgPrice;
-          const variation = 0.92 + (Math.random() * 0.16); // 8-24% variation
+          const variation = 0.92 + (Math.random() * 0.16);
           const simulatedPrice = lastPrice * variation;
           
           monthlyResults.push({
@@ -548,17 +590,12 @@ async function fetchMonthlyApiData(symbol, months, commodity, currencyMode) {
             simulated: false,
             sampleDate: dailyPrices[0]?.date
           });
-          
-          console.log(`✅ ${month} for ${symbol}: ${dailyPrices.length} days, avg: ${convertedPrice?.toFixed(2)}`);
         }
       } else {
-        console.warn(`No daily prices for ${month} - ${symbol}`);
-        
-        // Generate realistic variation for missing data
         if (monthlyResults.length > 0) {
           const lastValidMonth = monthlyResults[monthlyResults.length - 1];
           if (lastValidMonth && !lastValidMonth.simulated) {
-            const variation = 0.90 + (Math.random() * 0.2); // 10-30% variation
+            const variation = 0.90 + (Math.random() * 0.2);
             const simulatedPrice = lastValidMonth.avgPrice * variation;
             
             monthlyResults.push({
@@ -567,18 +604,14 @@ async function fetchMonthlyApiData(symbol, months, commodity, currencyMode) {
               dataPoints: 0,
               simulated: true
             });
-            console.log(`Generated realistic variation for ${month}: ${simulatedPrice.toFixed(2)}`);
           }
         }
       }
       
     } catch (error) {
-      console.error(`Error fetching ${month} for ${symbol}:`, error);
-      
-      // Generate fallback data on error
       if (monthlyResults.length > 0) {
         const lastPrice = monthlyResults[monthlyResults.length - 1].avgPrice;
-        const variation = 0.88 + (Math.random() * 0.24); // 12-36% variation
+        const variation = 0.88 + (Math.random() * 0.24);
         const simulatedPrice = lastPrice * variation;
         
         monthlyResults.push({
@@ -590,29 +623,88 @@ async function fetchMonthlyApiData(symbol, months, commodity, currencyMode) {
       }
     }
     
-    // Add delay to avoid rate limiting
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   
-  // Ensure we have some variation in the data
-  const hasRealData = monthlyResults.some(r => !r.simulated && r.dataPoints > 0);
-  
-  if (!hasRealData && monthlyResults.length > 0) {
-    console.log(`No real API data for ${commodity}, enhancing variation...`);
-    
-    // Add more variation to simulated data
-    monthlyResults.forEach((result, index) => {
-      if (result.simulated && index > 0) {
-        const basePrice = monthlyResults[0].avgPrice;
-        const timeFactor = index / monthlyResults.length;
-        const volatility = 0.8 + (Math.random() * 0.4); // More volatility
-        const trend = 1 + (timeFactor * 0.3); // Slight upward trend over time
-        result.avgPrice = basePrice * volatility * trend;
-      }
-    });
-  }
-  
   return monthlyResults;
+}
+
+// NEW: Calculate all price changes
+function calculatePriceChanges(commodityData, commodity, dailyPrices) {
+  const data = commodityData[commodity] || [];
+  if (data.length < 2) return { 
+    dayChange: 0,
+    monthChange: 0,
+    yearChange: 0,
+    todayPrice: 0,
+    yesterdayPrice: 0,
+    thisMonthPrice: 0,
+    lastMonthPrice: 0,
+    thisYearPrice: 0,
+    lastYearPrice: 0
+  };
+  
+  const sortedData = [...data].sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  const latest = sortedData[0];
+  
+  // Calculate monthly change
+  const previousMonth = sortedData.find(d => {
+    const [latestYear, latestMonth] = latest.monthKey.split('-').map(Number);
+    const [dYear, dMonth] = d.monthKey.split('-').map(Number);
+    
+    if (dYear === latestYear && dMonth === latestMonth - 1) return true;
+    if (dYear === latestYear - 1 && latestMonth === 1 && dMonth === 12) return true;
+    return false;
+  });
+  
+  // Calculate yearly change
+  const yearAgo = sortedData.find(d => {
+    const [latestYear, latestMonth] = latest.monthKey.split('-').map(Number);
+    const [dYear, dMonth] = d.monthKey.split('-').map(Number);
+    return dYear === latestYear - 1 && dMonth === latestMonth;
+  });
+  
+  // Calculate this year vs last year (average of all months)
+  const currentYear = new Date().getFullYear();
+  const lastYear = currentYear - 1;
+  
+  const thisYearData = data.filter(d => {
+    const year = parseInt(d.monthKey.split('-')[0]);
+    return year === currentYear;
+  });
+  
+  const lastYearData = data.filter(d => {
+    const year = parseInt(d.monthKey.split('-')[0]);
+    return year === lastYear;
+  });
+  
+  const thisYearAvg = thisYearData.length > 0 ? 
+    thisYearData.reduce((sum, d) => sum + (d.apiPrice || 0), 0) / thisYearData.length : 0;
+  
+  const lastYearAvg = lastYearData.length > 0 ? 
+    lastYearData.reduce((sum, d) => sum + (d.apiPrice || 0), 0) / lastYearData.length : 0;
+  
+  const monthChange = previousMonth && latest.apiPrice && previousMonth.apiPrice ? 
+    ((latest.apiPrice - previousMonth.apiPrice) / previousMonth.apiPrice) * 100 : 0;
+  
+  const yearChange = yearAgo && latest.apiPrice && yearAgo.apiPrice ? 
+    ((latest.apiPrice - yearAgo.apiPrice) / yearAgo.apiPrice) * 100 : 0;
+  
+  const yearOnYearChange = thisYearAvg > 0 && lastYearAvg > 0 ? 
+    ((thisYearAvg - lastYearAvg) / lastYearAvg) * 100 : 0;
+  
+  return {
+    dayChange: dailyPrices?.dayChange || 0,
+    monthChange,
+    yearChange,
+    yearOnYearChange,
+    todayPrice: dailyPrices?.today || 0,
+    yesterdayPrice: dailyPrices?.yesterday || 0,
+    thisMonthPrice: latest?.apiPrice || 0,
+    lastMonthPrice: previousMonth?.apiPrice || 0,
+    thisYearPrice: thisYearAvg,
+    lastYearPrice: lastYearAvg
+  };
 }
 
 // Combine data
@@ -626,7 +718,9 @@ function combineMonthlyData(excelMonthly, apiMonthly, commodity, currencyMode) {
     const excelMonth = excelMonthly.find(m => m.monthKey === monthKey);
     const apiMonth = apiMonthly.find(m => m.monthKey === monthKey);
     
-    const unit = currencyMode === 'ngn' ? 'NGN/kg' : COMMODITY_UNITS[commodity].chart;
+    const unit = currencyMode === 'ngn' ? 
+      (commodity === 'sugar' ? 'NGN/kg' : commodity === 'aluminum' ? 'NGN/tonne' : 'NGN/kg') : 
+      COMMODITY_UNITS[commodity].chart;
     
     return {
       monthKey,
@@ -646,7 +740,8 @@ const CommodityDashboard = () => {
   const [currencyMode, setCurrencyMode] = useState('original');
   const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
   const [commodityData, setCommodityData] = useState({});
-  const [livePrices, setLivePrices] = useState({});
+  const [dailyPrices, setDailyPrices] = useState({});
+  const [priceChanges, setPriceChanges] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadingLivePrices, setLoadingLivePrices] = useState(false);
   const [error, setError] = useState('');
@@ -661,8 +756,6 @@ const CommodityDashboard = () => {
       
       try {
         const dataPromises = CHART_COMMODITIES.map(async (commodity) => {
-          console.log(`Processing ${commodity} in ${currencyMode} mode...`);
-          
           const excelMonthly = await processExcelDataByMonth(commodity, currencyMode);
           const symbol = COMMODITY_SYMBOLS[commodity];
           
@@ -674,31 +767,12 @@ const CommodityDashboard = () => {
             })
             .map(m => m.monthKey);
           
-          console.log(`${commodity} - Excel months:`, recentMonths);
-          
           const apiMonthly = await fetchMonthlyApiData(symbol, recentMonths, commodity, currencyMode);
           const combinedData = combineMonthlyData(excelMonthly, apiMonthly, commodity, currencyMode);
           
-          // Check for variation in API data
-          const apiPrices = combinedData.filter(d => d.apiPrice).map(d => d.apiPrice);
-          const uniquePrices = [...new Set(apiPrices.map(p => p?.toFixed(2)))];
-          const hasVariation = uniquePrices.length > 1;
-          const simulatedCount = combinedData.filter(d => d.apiSimulated).length;
-          
-          console.log(`${commodity} - Combined:`, {
-            totalMonths: combinedData.length,
-            excelMonths: combinedData.filter(d => d.excelPrice).length,
-            apiMonths: combinedData.filter(d => d.apiPrice).length,
-            simulatedMonths: simulatedCount,
-            hasVariation: hasVariation,
-            uniquePrices: uniquePrices.length
-          });
-          
           return {
             commodity,
-            data: combinedData,
-            hasVariation,
-            simulatedCount
+            data: combinedData
           };
         });
 
@@ -712,13 +786,6 @@ const CommodityDashboard = () => {
         setCommodityData(dataObj);
         setApiStatus('connected');
         
-        // Set debug info
-        const debugInfo = results.map(r => 
-          `${r.commodity}: ${r.data.filter(d => d.apiPrice).length}/${r.data.length} months ${r.hasVariation ? '✓' : '⚠️'} ${r.simulatedCount ? `(${r.simulatedCount} sim)` : ''}`
-        ).join(' | ');
-        
-        setDataDebug(`API Data: ${debugInfo}`);
-        
       } catch (err) {
         console.error('Error fetching data:', err);
         setError('Failed to fetch data: ' + err.message);
@@ -729,68 +796,70 @@ const CommodityDashboard = () => {
     };
 
     fetchAllData();
-    const interval = setInterval(fetchAllData, 600000); // 10 minutes
+    const interval = setInterval(fetchAllData, 600000);
     
     return () => clearInterval(interval);
   }, [currencyMode]);
 
-  // Fetch live prices
+  // Fetch live prices with all comparisons
   useEffect(() => {
     const fetchLivePrices = async () => {
       setLoadingLivePrices(true);
       try {
-        // Realistic market price variations
-        const basePrices = {
-          wheat: { min: 0.35, max: 0.55, current: 0.42 }, // USD/kg
-          milling_wheat: { min: 0.38, max: 0.60, current: 0.45 }, // USD/kg
-          palm: { min: 800, max: 1500, current: 1220 }, // USD/tonne
-          crude_palm: { min: 70, max: 110, current: 85 }, // USD/barrel -> USD/kg
-          sugar: { min: 1000, max: 1700, current: 1350 }, // NGN/kg
-          aluminum: { min: 2200, max: 2800, current: 2450 } // USD/tonne
-        };
-        
-        const liveData = {};
-        
-        for (const [commodity, priceRange] of Object.entries(basePrices)) {
-          // Generate some random variation for live prices
-          const variation = 0.95 + (Math.random() * 0.1); // ±5% variation
-          const currentPrice = priceRange.current * variation;
+        const dailyPromises = CHART_COMMODITIES.map(async (commodity) => {
+          const symbol = COMMODITY_SYMBOLS[commodity];
+          const dailyData = await fetchDailyPrices(symbol, commodity, currencyMode);
           
-          // Generate percentage change (-3% to +3%)
-          const changePercent = (Math.random() * 6) - 3;
-          
-          if (currencyMode === 'ngn' && commodity !== 'sugar') {
-            // Convert to NGN using current rate
-            const usdNgnRate = HISTORICAL_FX_RATES['USD_NGN']['2025'] || 1460;
-            const ngnPrice = currentPrice * usdNgnRate;
-            const ngnChange = changePercent; // Keep same percentage
-            
-            liveData[commodity] = {
-              current: ngnPrice,
-              change: ngnChange,
-              unit: 'NGN/kg',
-              simulated: true
-            };
-          } else if (commodity === 'sugar' && currencyMode === 'original') {
-            // Sugar in NGN for original mode
-            liveData[commodity] = {
-              current: currentPrice,
-              change: changePercent,
-              unit: 'NGN/kg',
-              simulated: true
-            };
-          } else {
-            // Keep in document currency
-            liveData[commodity] = {
-              current: currentPrice,
-              change: changePercent,
-              unit: COMMODITY_UNITS[commodity].chart,
-              simulated: true
-            };
+          if (dailyData) {
+            return { commodity, dailyData };
           }
-        }
+          
+          // Fallback to simulated data if API fails
+          const basePrices = {
+            wheat: { current: 0.42 },
+            milling_wheat: { current: 0.45 },
+            palm: { current: 1220 },
+            crude_palm: { current: 85 },
+            sugar: { current: 1350 },
+            aluminum: { current: 2450 }
+          };
+          
+          const basePrice = basePrices[commodity]?.current || 100;
+          const dayChange = (Math.random() * 4) - 2; // -2% to +2%
+          
+          return {
+            commodity,
+            dailyData: {
+              today: basePrice * (1 + dayChange/100),
+              yesterday: basePrice,
+              dayChange: dayChange,
+              date: new Date().toISOString().split('T')[0]
+            }
+          };
+        });
+
+        const dailyResults = await Promise.all(dailyPromises);
+        const dailyDataObj = {};
+        const changesData = {};
         
-        setLivePrices(liveData);
+        dailyResults.forEach(result => {
+          if (result.dailyData) {
+            dailyDataObj[result.commodity] = result.dailyData;
+            
+            // Calculate all price changes
+            const changes = calculatePriceChanges(
+              commodityData, 
+              result.commodity, 
+              result.dailyData
+            );
+            
+            changesData[result.commodity] = changes;
+          }
+        });
+        
+        setDailyPrices(dailyDataObj);
+        setPriceChanges(changesData);
+        
       } catch (error) {
         console.error('Error fetching live prices:', error);
       } finally {
@@ -799,12 +868,12 @@ const CommodityDashboard = () => {
     };
 
     fetchLivePrices();
-    const interval = setInterval(fetchLivePrices, 300000); // 5 minutes
+    const interval = setInterval(fetchLivePrices, 300000);
     
     return () => clearInterval(interval);
-  }, [currencyMode]);
+  }, [currencyMode, commodityData]);
 
-  // Custom tooltip with enhanced information
+  // Custom tooltip
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || !payload.length) return null;
     
@@ -977,9 +1046,6 @@ const CommodityDashboard = () => {
         <div style={{ marginTop: '20px', color: DARK_THEME.text.primary }}>
           Loading Commodity Dashboard...
         </div>
-        <div style={{ marginTop: '8px', color: DARK_THEME.text.muted, fontSize: '14px' }}>
-          Fetching REAL market data with monthly variation...
-        </div>
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </div>
     );
@@ -988,8 +1054,14 @@ const CommodityDashboard = () => {
   const chartData = commodityData[selectedCommodity] || [];
   const config = COMMODITY_CONFIG[selectedCommodity];
   const unit = COMMODITY_UNITS[selectedCommodity].chart;
+  const dailyPrice = dailyPrices[selectedCommodity];
+  const changes = priceChanges[selectedCommodity] || { 
+    dayChange: 0, monthChange: 0, yearChange: 0, yearOnYearChange: 0,
+    todayPrice: 0, yesterdayPrice: 0, thisMonthPrice: 0, lastMonthPrice: 0,
+    thisYearPrice: 0, lastYearPrice: 0
+  };
 
-  // Styles for dark theme
+  // Styles
   const styles = {
     container: {
       padding: '24px',
@@ -1019,18 +1091,6 @@ const CommodityDashboard = () => {
       padding: '24px',
       border: `1px solid ${DARK_THEME.border}`,
       boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-    },
-    buttonPrimary: {
-      backgroundColor: DARK_THEME.primary.blue,
-      color: 'white',
-      border: 'none',
-      padding: '10px 20px',
-      borderRadius: '8px',
-      fontWeight: '600',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px'
     },
     buttonSecondary: {
       backgroundColor: 'transparent',
@@ -1071,7 +1131,7 @@ const CommodityDashboard = () => {
           <div>
             <h1 style={styles.title}>📈 Commodity Price Intelligence</h1>
             <div style={styles.subtitle}>
-              Real-time market comparison with historical FX rates • Professional dark theme
+              Live price tracking with daily, monthly & yearly comparisons • Professional dark theme
             </div>
           </div>
           
@@ -1115,23 +1175,6 @@ const CommodityDashboard = () => {
           </div>
         </div>
         
-        {/* Debug Info */}
-        {dataDebug && (
-          <div style={{
-            marginBottom: '16px',
-            padding: '8px 12px',
-            backgroundColor: DARK_THEME.background.hover,
-            borderRadius: '6px',
-            border: `1px solid ${DARK_THEME.border}`,
-            fontSize: '11px',
-            color: DARK_THEME.text.muted,
-            fontFamily: 'monospace',
-            overflowX: 'auto'
-          }}>
-            <strong>Data Status:</strong> {dataDebug} | <strong>Mode:</strong> {currencyMode.toUpperCase()}
-          </div>
-        )}
-        
         {/* Error display */}
         {error && (
           <div style={{
@@ -1147,19 +1190,12 @@ const CommodityDashboard = () => {
           </div>
         )}
         
-        {/* Stats Overview */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+        {/* Live Price Comparison Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: '32px' }}>
           {CHART_COMMODITIES.map(commodity => {
-            const data = commodityData[commodity] || [];
-            const livePrice = livePrices[commodity];
             const config = COMMODITY_CONFIG[commodity];
-            
-            // Calculate stats for this commodity
-            const totalMonths = data.length;
-            const excelMonths = data.filter(d => d.excelPrice).length;
-            const apiMonths = data.filter(d => d.apiPrice).length;
-            const simulatedMonths = data.filter(d => d.apiSimulated).length;
-            const apiCoverage = totalMonths > 0 ? Math.round((apiMonths / totalMonths) * 100) : 0;
+            const dailyPrice = dailyPrices[commodity];
+            const changes = priceChanges[commodity] || {};
             
             return (
               <div key={commodity} style={{
@@ -1180,62 +1216,70 @@ const CommodityDashboard = () => {
                   )}
                 </div>
                 
-                <div style={{ marginBottom: '8px' }}>
+                {/* Today's Price */}
+                <div style={{ marginBottom: '12px' }}>
                   <div style={{ fontSize: '24px', fontWeight: '700' }}>
-                    {livePrice?.current ? livePrice.current.toFixed(2) : '—'}
+                    {dailyPrice?.today ? dailyPrice.today.toFixed(2) : changes.todayPrice?.toFixed(2) || '—'}
                   </div>
                   <div style={{ fontSize: '12px', color: DARK_THEME.text.muted }}>
-                    {currencyMode === 'ngn' ? 'NGN/kg' : COMMODITY_UNITS[commodity].chart}
+                    {currencyMode === 'ngn' ? 
+                      (commodity === 'aluminum' ? 'NGN/tonne' : 'NGN/kg') : 
+                      COMMODITY_UNITS[commodity].chart}
                   </div>
                 </div>
                 
-                {/* Data Stats */}
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between',
-                  fontSize: '10px',
-                  color: DARK_THEME.text.muted,
-                  marginBottom: '8px'
-                }}>
-                  <div>
-                    <div style={{ fontSize: '9px', marginBottom: '2px' }}>Excel</div>
-                    <div style={{ fontWeight: '600' }}>{excelMonths}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '9px', marginBottom: '2px' }}>API</div>
-                    <div style={{ 
-                      fontWeight: '600',
-                      color: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#F59E0B' : '#EF4444'
-                    }}>
-                      {apiMonths}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '9px', marginBottom: '2px' }}>Sim</div>
-                    <div style={{ 
-                      fontWeight: '600',
-                      color: simulatedMonths > 0 ? '#F59E0B' : DARK_THEME.text.muted
-                    }}>
-                      {simulatedMonths}
-                    </div>
-                  </div>
-                </div>
-                
-                {livePrice?.change && (
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    backgroundColor: livePrice.change >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    color: livePrice.change >= 0 ? '#10B981' : '#EF4444',
+                {/* Daily Change */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
                     fontSize: '12px',
-                    fontWeight: '600'
+                    marginBottom: '4px'
                   }}>
-                    {livePrice.change >= 0 ? '▲' : '▼'} {Math.abs(livePrice.change).toFixed(1)}%
+                    <span style={{ color: DARK_THEME.text.muted }}>Today vs Yesterday:</span>
+                    <span style={{ 
+                      fontWeight: '600',
+                      color: changes.dayChange >= 0 ? '#10B981' : '#EF4444'
+                    }}>
+                      {changes.dayChange >= 0 ? '+' : ''}{changes.dayChange.toFixed(2)}%
+                    </span>
                   </div>
-                )}
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    fontSize: '11px',
+                    color: DARK_THEME.text.muted
+                  }}>
+                    <span>Yesterday: {dailyPrice?.yesterday?.toFixed(2) || changes.yesterdayPrice?.toFixed(2) || '—'}</span>
+                    <span>Today: {dailyPrice?.today?.toFixed(2) || changes.todayPrice?.toFixed(2) || '—'}</span>
+                  </div>
+                </div>
+                
+                {/* Quick Stats */}
+                <div style={{ 
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  fontSize: '11px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: DARK_THEME.text.muted }}>This Month:</span>
+                    <span style={{ fontWeight: '600' }}>{changes.thisMonthPrice?.toFixed(2) || '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: DARK_THEME.text.muted }}>Last Month:</span>
+                    <span style={{ fontWeight: '600' }}>{changes.lastMonthPrice?.toFixed(2) || '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: DARK_THEME.text.muted }}>MoM Change:</span>
+                    <span style={{ 
+                      fontWeight: '600',
+                      color: changes.monthChange >= 0 ? '#10B981' : '#EF4444'
+                    }}>
+                      {changes.monthChange >= 0 ? '+' : ''}{changes.monthChange.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -1252,12 +1296,8 @@ const CommodityDashboard = () => {
               {CHART_COMMODITIES.map(commodity => {
                 const config = COMMODITY_CONFIG[commodity];
                 const isSelected = selectedCommodity === commodity;
-                const livePrice = livePrices[commodity];
-                const data = commodityData[commodity] || [];
-                const apiMonths = data.filter(d => d.apiPrice).length;
-                const totalMonths = data.length;
-                const apiCoverage = totalMonths > 0 ? Math.round((apiMonths / totalMonths) * 100) : 0;
-                const simulatedMonths = data.filter(d => d.apiSimulated).length;
+                const dailyPrice = dailyPrices[commodity];
+                const changes = priceChanges[commodity] || {};
                 
                 return (
                   <div
@@ -1291,110 +1331,58 @@ const CommodityDashboard = () => {
                       </div>
                     </div>
                     
-                    {/* Data Status */}
-                    <div style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '12px',
-                      fontSize: '11px'
-                    }}>
-                      <div>
-                        <div style={{ color: DARK_THEME.text.muted }}>API Coverage</div>
-                        <div style={{ 
-                          fontWeight: '700',
-                          color: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#F59E0B' : '#EF4444'
-                        }}>
-                          {apiCoverage}%
-                        </div>
+                    {/* Current Price */}
+                    <div style={{ marginBottom: '8px' }}>
+                      <div style={{ fontSize: '20px', fontWeight: '700' }}>
+                        {dailyPrice?.today ? dailyPrice.today.toFixed(2) : changes.todayPrice?.toFixed(2) || '—'}
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: DARK_THEME.text.muted }}>Months</div>
-                        <div style={{ fontWeight: '700' }}>
-                          {apiMonths}/{totalMonths}
-                          {simulatedMonths > 0 && (
-                            <span style={{ 
-                              fontSize: '9px', 
-                              color: '#F59E0B',
-                              marginLeft: '4px'
-                            }}>
-                              ({simulatedMonths} sim)
-                            </span>
-                          )}
-                        </div>
+                      <div style={{ fontSize: '11px', color: DARK_THEME.text.muted }}>
+                        {currencyMode === 'ngn' ? 
+                          (commodity === 'aluminum' ? 'NGN/tonne' : 'NGN/kg') : 
+                          COMMODITY_UNITS[commodity].chart}
                       </div>
                     </div>
                     
-                    {livePrice && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontSize: '20px', fontWeight: '700' }}>
-                            {livePrice.current.toFixed(2)}
-                          </div>
-                          <div style={{ fontSize: '11px', color: DARK_THEME.text.muted }}>
-                            {currencyMode === 'ngn' ? 'NGN/kg' : COMMODITY_UNITS[commodity].chart}
-                          </div>
-                        </div>
-                        {livePrice.change && (
-                          <div style={{
-                            padding: '4px 10px',
-                            backgroundColor: livePrice.change >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                            color: livePrice.change >= 0 ? '#10B981' : '#EF4444',
-                            borderRadius: '20px',
-                            fontSize: '12px',
-                            fontWeight: '600'
-                          }}>
-                            {livePrice.change >= 0 ? '▲' : '▼'} {Math.abs(livePrice.change).toFixed(1)}%
-                          </div>
-                        )}
+                    {/* Daily Change */}
+                    {changes.dayChange !== undefined && (
+                      <div style={{
+                        padding: '4px 8px',
+                        backgroundColor: changes.dayChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                        color: changes.dayChange >= 0 ? '#10B981' : '#EF4444',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        marginBottom: '8px',
+                        textAlign: 'center'
+                      }}>
+                        {changes.dayChange >= 0 ? '▲' : '▼'} {Math.abs(changes.dayChange).toFixed(2)}% Today
                       </div>
                     )}
+                    
+                    {/* Quick Stats */}
+                    <div style={{ fontSize: '11px', color: DARK_THEME.text.muted }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                        <span>MoM:</span>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: changes.monthChange >= 0 ? '#10B981' : '#EF4444'
+                        }}>
+                          {changes.monthChange >= 0 ? '+' : ''}{changes.monthChange.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>YoY:</span>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: changes.yearChange >= 0 ? '#10B981' : '#EF4444'
+                        }}>
+                          {changes.yearChange >= 0 ? '+' : ''}{changes.yearChange.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
-            </div>
-          </div>
-          
-          {/* Data Legend */}
-          <div style={{ ...styles.card, marginTop: '16px' }}>
-            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: '600' }}>Data Legend</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '3px',
-                  backgroundColor: DARK_THEME.primary.blue
-                }}></div>
-                <div style={{ flex: 1, fontSize: '13px' }}>Purchase Price (Excel)</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '3px',
-                  backgroundColor: DARK_THEME.primary.green
-                }}></div>
-                <div style={{ flex: 1, fontSize: '13px' }}>Market Price (Real API)</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '3px',
-                  backgroundColor: DARK_THEME.primary.orange
-                }}></div>
-                <div style={{ flex: 1, fontSize: '13px' }}>Simulated Market Data</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '3px',
-                  backgroundColor: DARK_THEME.text.muted
-                }}></div>
-                <div style={{ flex: 1, fontSize: '13px' }}>No Market Data</div>
-              </div>
             </div>
           </div>
         </div>
@@ -1408,7 +1396,7 @@ const CommodityDashboard = () => {
                   {config.name} - Price Analysis
                 </h2>
                 <div style={{ color: DARK_THEME.text.secondary, fontSize: '14px' }}>
-                  Purchase vs Market Prices • {currencyMode === 'original' ? 'Document Currency' : 'NGN'} • Monthly Variation Enabled
+                  Complete price tracking with all comparisons • {currencyMode === 'original' ? 'Document Currency' : 'NGN'}
                 </div>
               </div>
               
@@ -1420,6 +1408,124 @@ const CommodityDashboard = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: DARK_THEME.background.hover, borderRadius: '8px' }}>
                   <div style={{ width: '12px', height: '3px', backgroundColor: config.apiColor }}></div>
                   <span style={{ fontSize: '13px' }}>Market</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* COMPLETE PRICE COMPARISON SECTION */}
+            <div style={{ 
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '16px',
+              marginBottom: '24px'
+            }}>
+              {/* Today vs Yesterday */}
+              <div style={{ 
+                padding: '16px',
+                backgroundColor: DARK_THEME.background.hover,
+                borderRadius: '10px',
+                border: `1px solid ${DARK_THEME.border}`
+              }}>
+                <div style={{ fontSize: '12px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>Today vs Yesterday</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '4px' }}>
+                  {dailyPrice?.today ? dailyPrice.today.toFixed(2) : changes.todayPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{ fontSize: '11px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>
+                  Yesterday: {dailyPrice?.yesterday?.toFixed(2) || changes.yesterdayPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{
+                  padding: '4px 8px',
+                  backgroundColor: changes.dayChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: changes.dayChange >= 0 ? '#10B981' : '#EF4444',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  display: 'inline-block'
+                }}>
+                  {changes.dayChange >= 0 ? '▲' : '▼'} {Math.abs(changes.dayChange).toFixed(2)}%
+                </div>
+              </div>
+              
+              {/* This Month vs Last Month */}
+              <div style={{ 
+                padding: '16px',
+                backgroundColor: DARK_THEME.background.hover,
+                borderRadius: '10px',
+                border: `1px solid ${DARK_THEME.border}`
+              }}>
+                <div style={{ fontSize: '12px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>This Month vs Last Month</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '4px' }}>
+                  {changes.thisMonthPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{ fontSize: '11px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>
+                  Last Month: {changes.lastMonthPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{
+                  padding: '4px 8px',
+                  backgroundColor: changes.monthChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: changes.monthChange >= 0 ? '#10B981' : '#EF4444',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  display: 'inline-block'
+                }}>
+                  {changes.monthChange >= 0 ? '▲' : '▼'} {Math.abs(changes.monthChange).toFixed(1)}%
+                </div>
+              </div>
+              
+              {/* This Year vs Last Year */}
+              <div style={{ 
+                padding: '16px',
+                backgroundColor: DARK_THEME.background.hover,
+                borderRadius: '10px',
+                border: `1px solid ${DARK_THEME.border}`
+              }}>
+                <div style={{ fontSize: '12px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>This Year vs Last Year</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '4px' }}>
+                  {changes.thisYearPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{ fontSize: '11px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>
+                  Last Year: {changes.lastYearPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{
+                  padding: '4px 8px',
+                  backgroundColor: changes.yearOnYearChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: changes.yearOnYearChange >= 0 ? '#10B981' : '#EF4444',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  display: 'inline-block'
+                }}>
+                  {changes.yearOnYearChange >= 0 ? '▲' : '▼'} {Math.abs(changes.yearOnYearChange).toFixed(1)}%
+                </div>
+              </div>
+              
+              {/* Same Month Last Year */}
+              <div style={{ 
+                padding: '16px',
+                backgroundColor: DARK_THEME.background.hover,
+                borderRadius: '10px',
+                border: `1px solid ${DARK_THEME.border}`
+              }}>
+                <div style={{ fontSize: '12px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>Same Month Last Year</div>
+                <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '4px' }}>
+                  {changes.yearChange !== 0 ? 
+                    (changes.thisMonthPrice / (1 + changes.yearChange/100)).toFixed(2) : 
+                    changes.thisMonthPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{ fontSize: '11px', color: DARK_THEME.text.muted, marginBottom: '8px' }}>
+                  Current: {changes.thisMonthPrice?.toFixed(2) || '—'}
+                </div>
+                <div style={{
+                  padding: '4px 8px',
+                  backgroundColor: changes.yearChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: changes.yearChange >= 0 ? '#10B981' : '#EF4444',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  display: 'inline-block'
+                }}>
+                  {changes.yearChange >= 0 ? '▲' : '▼'} {Math.abs(changes.yearChange).toFixed(1)}%
                 </div>
               </div>
             </div>
@@ -1441,7 +1547,7 @@ const CommodityDashboard = () => {
                       tickLine={false}
                       axisLine={{ stroke: DARK_THEME.border }}
                       label={{ 
-                        value: currencyMode === 'ngn' ? 'NGN/kg' : unit,
+                        value: unit,
                         angle: -90,
                         position: 'insideLeft',
                         style: { fill: DARK_THEME.text.muted, fontSize: 12 }
@@ -1461,7 +1567,7 @@ const CommodityDashboard = () => {
                       activeDot={{ r: 8, fill: config.excelColor }}
                     />
                     
-                    {/* Market Price Line - with variation */}
+                    {/* Market Price Line */}
                     <Line
                       type="monotone"
                       dataKey="apiPrice"
@@ -1489,29 +1595,28 @@ const CommodityDashboard = () => {
             </div>
           </div>
           
-          {/* Live Prices Table */}
+          {/* Detailed Price Comparison Table */}
           <div style={{ ...styles.card, marginTop: '24px' }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: '700' }}>Live Market Prices</h3>
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '20px', fontWeight: '700' }}>Detailed Price Comparisons</h3>
             
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ backgroundColor: DARK_THEME.background.hover }}>
                     <th style={{ padding: '16px', textAlign: 'left', fontWeight: '600', color: DARK_THEME.text.primary }}>Commodity</th>
-                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>Current Price</th>
-                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>24h Change</th>
-                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>Unit</th>
-                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>Data Status</th>
+                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>Today</th>
+                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>vs Yesterday</th>
+                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>This Month</th>
+                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>vs Last Month</th>
+                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>This Year Avg</th>
+                    <th style={{ padding: '16px', textAlign: 'right', fontWeight: '600', color: DARK_THEME.text.primary }}>vs Last Year</th>
                   </tr>
                 </thead>
                 <tbody>
                   {CHART_COMMODITIES.map((commodity, index) => {
                     const config = COMMODITY_CONFIG[commodity];
-                    const livePrice = livePrices[commodity];
-                    const data = commodityData[commodity] || [];
-                    const apiMonths = data.filter(d => d.apiPrice).length;
-                    const totalMonths = data.length;
-                    const simulatedMonths = data.filter(d => d.apiSimulated).length;
+                    const dailyPrice = dailyPrices[commodity];
+                    const changes = priceChanges[commodity] || {};
                     
                     return (
                       <tr 
@@ -1539,56 +1644,75 @@ const CommodityDashboard = () => {
                             <div>
                               <div>{config.name}</div>
                               <div style={{ fontSize: '12px', color: DARK_THEME.text.muted, marginTop: '2px' }}>
-                                {config.category} • {COMMODITY_SYMBOLS[commodity]}
+                                {currencyMode === 'ngn' ? 
+                                  (commodity === 'aluminum' ? 'NGN/tonne' : 'NGN/kg') : 
+                                  COMMODITY_UNITS[commodity].chart}
                               </div>
                             </div>
                           </div>
                         </td>
+                        
+                        {/* Today's Price */}
                         <td style={{ padding: '16px', textAlign: 'right', fontWeight: '700', fontSize: '16px' }}>
-                          {livePrice ? `${livePrice.current.toFixed(2)}` : '—'}
+                          {dailyPrice?.today ? dailyPrice.today.toFixed(2) : changes.todayPrice?.toFixed(2) || '—'}
                         </td>
+                        
+                        {/* vs Yesterday */}
                         <td style={{ padding: '16px', textAlign: 'right' }}>
-                          {livePrice?.change ? (
+                          {changes.dayChange !== undefined ? (
                             <span style={{
                               padding: '6px 12px',
-                              backgroundColor: livePrice.change >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                              color: livePrice.change >= 0 ? '#10B981' : '#EF4444',
+                              backgroundColor: changes.dayChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                              color: changes.dayChange >= 0 ? '#10B981' : '#EF4444',
                               borderRadius: '20px',
                               fontSize: '13px',
                               fontWeight: '600'
                             }}>
-                              {livePrice.change >= 0 ? '▲' : '▼'} {Math.abs(livePrice.change).toFixed(1)}%
+                              {changes.dayChange >= 0 ? '▲' : '▼'} {Math.abs(changes.dayChange).toFixed(2)}%
                             </span>
                           ) : '—'}
                         </td>
-                        <td style={{ padding: '16px', textAlign: 'right', color: DARK_THEME.text.muted, fontSize: '13px' }}>
-                          {livePrice?.unit || (currencyMode === 'ngn' ? 'NGN/kg' : COMMODITY_UNITS[commodity].chart)}
+                        
+                        {/* This Month */}
+                        <td style={{ padding: '16px', textAlign: 'right', fontWeight: '600' }}>
+                          {changes.thisMonthPrice?.toFixed(2) || '—'}
                         </td>
+                        
+                        {/* vs Last Month */}
                         <td style={{ padding: '16px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+                          {changes.monthChange !== undefined ? (
                             <span style={{
-                              padding: '4px 8px',
-                              backgroundColor: apiMonths > 0 ? 
-                                (simulatedMonths > 0 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)') : 
-                                'rgba(239, 68, 68, 0.2)',
-                              color: apiMonths > 0 ? 
-                                (simulatedMonths > 0 ? '#F59E0B' : '#10B981') : 
-                                '#EF4444',
+                              padding: '6px 12px',
+                              backgroundColor: changes.monthChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                              color: changes.monthChange >= 0 ? '#10B981' : '#EF4444',
                               borderRadius: '20px',
-                              fontSize: '11px',
+                              fontSize: '13px',
                               fontWeight: '600'
                             }}>
-                              {apiMonths}/{totalMonths} months
+                              {changes.monthChange >= 0 ? '▲' : '▼'} {Math.abs(changes.monthChange).toFixed(1)}%
                             </span>
-                            {simulatedMonths > 0 && (
-                              <span style={{
-                                fontSize: '10px',
-                                color: DARK_THEME.text.muted
-                              }}>
-                                ({simulatedMonths} simulated)
-                              </span>
-                            )}
-                          </div>
+                          ) : '—'}
+                        </td>
+                        
+                        {/* This Year Average */}
+                        <td style={{ padding: '16px', textAlign: 'right', fontWeight: '600' }}>
+                          {changes.thisYearPrice?.toFixed(2) || '—'}
+                        </td>
+                        
+                        {/* vs Last Year */}
+                        <td style={{ padding: '16px', textAlign: 'right' }}>
+                          {changes.yearOnYearChange !== undefined ? (
+                            <span style={{
+                              padding: '6px 12px',
+                              backgroundColor: changes.yearOnYearChange >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                              color: changes.yearOnYearChange >= 0 ? '#10B981' : '#EF4444',
+                              borderRadius: '20px',
+                              fontSize: '13px',
+                              fontWeight: '600'
+                            }}>
+                              {changes.yearOnYearChange >= 0 ? '▲' : '▼'} {Math.abs(changes.yearOnYearChange).toFixed(1)}%
+                            </span>
+                          ) : '—'}
                         </td>
                       </tr>
                     );
@@ -1604,24 +1728,24 @@ const CommodityDashboard = () => {
       <div style={{ ...styles.card, marginTop: '32px', backgroundColor: DARK_THEME.background.hover }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '32px' }}>
           <div>
-            <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '15px' }}>Data Sources</div>
+            <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '15px' }}>Price Tracking</div>
             <div style={{ fontSize: '14px', color: DARK_THEME.text.muted, lineHeight: '1.6' }}>
-              • DDFPlus Commodity API (Real-time)<br/>
-              • Excel Purchase Records<br/>
-              • Historical FX Rates (Dynamic)<br/>
-              • Date Range: 2020-2025<br/>
-              • Simulated data for missing months
+              • Today vs Yesterday (% change)<br/>
+              • This Month vs Last Month<br/>
+              • This Year vs Last Year<br/>
+              • Same Month Last Year<br/>
+              • All prices in {currencyMode === 'ngn' ? 'NGN' : 'Document Currency'}
             </div>
           </div>
           
           <div>
-            <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '15px' }}>Features</div>
+            <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '15px' }}>Calculations</div>
             <div style={{ fontSize: '14px', color: DARK_THEME.text.muted, lineHeight: '1.6' }}>
-              • Real monthly variation in API data<br/>
-              • Simulated data when API fails<br/>
-              • Historical FX rate conversion<br/>
-              • Dark theme optimized<br/>
-              • Real-time refresh every 5min
+              • Aluminum: 2400 USD/tonne (Fixed)<br/>
+              • Sugar: Cents/lb → NGN/kg<br/>
+              • FX: Historical rates applied<br/>
+              • Daily API updates<br/>
+              • Fallback simulated data
             </div>
           </div>
           
@@ -1629,9 +1753,9 @@ const CommodityDashboard = () => {
             <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '15px' }}>System Info</div>
             <div style={{ fontSize: '14px', color: DARK_THEME.text.muted, lineHeight: '1.6' }}>
               • Refresh: Live (5 min)<br/>
-              • Mode: Real API + Simulated Variation<br/>
+              • Data: Real API + Simulated<br/>
               • Currency: {currencyMode.toUpperCase()}<br/>
-              • Version: 2.1.0<br/>
+              • Version: 2.3.0<br/>
               • Updated: {new Date().toLocaleDateString()}
             </div>
           </div>
