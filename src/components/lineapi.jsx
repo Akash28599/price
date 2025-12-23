@@ -278,7 +278,7 @@ function convertExcelPriceToNGNPerKg(commodity, excelItem) {
       
    case 'crude_palm':
   if (excelItem.currency === 'USD') {
-    const usdPerKg = excelItem.rate / 1000;
+    const usdPerKg = excelItem.rate
     return usdPerKg * FX_RATES.USD_to_NGN;
   }
   return excelItem.rate;

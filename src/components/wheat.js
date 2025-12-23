@@ -152,23 +152,47 @@ export const SUGAR_MONTH_COST = [
 
 // src/data/commodityData.js - UPDATED VERSION
 export const COMPLETE_CRUDE_PALM_OIL_DATA = [
-  // October 2024 - Average: 1096 USD/ton
-  { poDate: '2024-10-01', rate: 1096, currency: 'USD' },
+  // October 2024 - Average: 1.53 USD/kg
+  { poDate: '2024-10-01', rate: 1.53, currency: 'USD', orderQuantity: 130000.000, netOrderValue: 199420.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
   
-  // December 2024 - Average: 1310 USD/ton  
-  { poDate: '2024-12-01', rate: 1310, currency: 'USD' },
+  // November 2024 - Average: 1.44 USD/kg
+  { poDate: '2024-11-01', rate: 1.44, currency: 'USD', orderQuantity: 520000.000, netOrderValue: 748800.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
   
-  // January 2025 - Average: 1294.38 USD/ton
-  { poDate: '2025-01-01', rate: 1294.38, currency: 'USD' },
+  // December 2024 - Average: 1.44 USD/kg  
+  { poDate: '2024-12-01', rate: 1.44, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 374400.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
   
-  // February 2025 - Average: 1260 USD/ton
-  { poDate: '2025-02-01', rate: 1260, currency: 'USD' },
+  // January 2025 - Average: 1.42 USD/kg
+  { poDate: '2025-01-01', rate: 1.42, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 369200.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
   
-  // March 2025 - Average: 1290 USD/ton
-  { poDate: '2025-03-01', rate: 1290, currency: 'USD' },
+  // February 2025 - Average: 1.38 USD/kg
+  { poDate: '2025-02-01', rate: 1.38, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 358800.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
   
-  // October 2025 - Average: 1220 USD/ton
-  { poDate: '2025-10-01', rate: 1220, currency: 'USD' }
+  // March 2025 - Average: 1.36 USD/kg
+  { poDate: '2025-03-01', rate: 1.36, currency: 'USD', orderQuantity: 208000.000, netOrderValue: 282880.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
+  
+  // April 2025 - Average: 1.36 USD/kg
+  { poDate: '2025-04-01', rate: 1.36, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 353600.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
+  
+  // May 2025 - Average: 1.27 USD/kg
+  { poDate: '2025-05-01', rate: 1.27, currency: 'USD', orderQuantity: 208000.000, netOrderValue: 264160.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
+  
+  // July 2025 - Average: 1.41 USD/kg
+  { poDate: '2025-07-01', rate: 1.41, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 366600.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
+  
+  // August 2025 - Average: 1.39 USD/kg
+  { poDate: '2025-08-01', rate: 1.39, currency: 'USD', orderQuantity: 104000.000, netOrderValue: 144560.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
+  
+  // September 2025 - Average: 1.33 USD/kg
+  { poDate: '2025-09-01', rate: 1.33, currency: 'USD', orderQuantity: 442000.000, netOrderValue: 586040.00, material: '30000639_30004261', shortText: 'Mixed: PP_RESIN_FC9413P & PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' },
+  
+  // October 2025 - Average: 1.33 USD/kg
+  { poDate: '2025-10-01', rate: 1.33, currency: 'USD', orderQuantity: 130000.000, netOrderValue: 172900.00, material: '30004261', shortText: 'PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' },
+  
+  // November 2025 - Average: 1.31 USD/kg
+  { poDate: '2025-11-01', rate: 1.31, currency: 'USD', orderQuantity: 130000.000, netOrderValue: 170300.00, material: '30004261', shortText: 'PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' },
+  
+  // December 2025 - Average: 1.27 USD/kg
+  { poDate: '2025-12-01', rate: 1.27, currency: 'USD', orderQuantity: 182000.000, netOrderValue: 231140.00, material: '30004261', shortText: 'PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' }
 ];
 
 export const CAN_DATA = [
