@@ -1,4 +1,4 @@
-// src/components/CommodityDashboard.jsx
+// src/components/CommodityDashboard.jsx - UPDATED FOR CORRECT PALM OIL UNITS
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -8,7 +8,7 @@ import {
 // Import your Excel data
 import {
   COMPLETE_WHEAT_DATA,
-  COMPLETE_PALM_OIL_DATA,
+  COMPLETE_PALM_OIL_DATA,  // This is now in USD/tonne
   COMPLETE_CRUDE_PALM_OIL_DATA,
   SUGAR_MONTH_COST,
   CAN_DATA
@@ -25,7 +25,6 @@ const COMMODITY_SYMBOLS = {
 };
 
 // Exchange rates - will be fetched dynamically
-// Exchange rates - will be fetched dynamically
 const DEFAULT_FX_RATES = {
   USD_to_NGN: 1460,
   EUR_to_NGN: 1600,
@@ -34,36 +33,33 @@ const DEFAULT_FX_RATES = {
   MYR_to_USD: 0.21,
   USD_to_MYR: 4.76,
   EUR_to_USD: 1.08,
-  MYR_to_NGN: 350,
-  // ADD THESE FOR BETTER PALM OIL CONVERSION
-  GHS_to_NGN: 127, // GHS 1 = NGN 127 (approx)
-  MYR_to_GHS: 3.5, // MYR 1 = GHS 3.5 (approx)
-  MYR_to_NGN: 445  // MYR 1 = NGN 445 (MYR to GHS then GHS to NGN)
+  MYR_to_NGN: 445
 };
+
 // Conversion factors
 const BUSHEL_TO_KG_WHEAT = 27.2155;
 const TONNE_TO_KG = 1000;
 const LB_TO_KG = 0.45359237;
 const ALUMINUM_CAN_WEIGHT_KG = 0.013;
 
-// Currency configuration for each commodity
-// Currency configuration for each commodity
+// Currency configuration for each commodity - UPDATED FOR PALM OIL
 const COMMODITY_CURRENCIES = {
   wheat: 'USD',
   milling_wheat: 'USD',
-  palm: 'GHS', // Excel data is in GHS
+  palm: 'USD',  // CHANGED: Palm oil is now in USD (USD/tonne in Excel)
   crude_palm: 'USD',
   sugar: 'NGN',
   aluminum: 'USD'
 };
 
-// Units by commodity and currency mode
-const getUnitsByCommodity = (currencyMode, commodity) => {
-  if (currencyMode === 'original') {
-    const currency = COMMODITY_CURRENCIES[commodity];
-    return `${currency}/kg`;
-  }
-  return 'NGN/kg';
+// Unit configuration for each commodity - UPDATED
+const COMMODITY_UNITS = {
+  wheat: { excel: 'USD/kg', api: 'USD/kg', chart: 'USD/kg' },
+  milling_wheat: { excel: 'USD/kg', api: 'EUR/kg', chart: 'USD/kg' },
+  palm: { excel: 'USD/tonne', api: 'MYR/tonne', chart: 'USD/tonne' }, // UPDATED
+  crude_palm: { excel: 'USD/kg', api: 'USD/kg', chart: 'USD/kg' },  // Crude palm is USD/kg
+  sugar: { excel: 'NGN/kg', api: 'USD/kg', chart: 'NGN/kg' },
+  aluminum: { excel: 'USD/tonne', api: 'USD/tonne', chart: 'USD/tonne' }
 };
 
 const decimalsByCommodity = {
@@ -75,7 +71,7 @@ const decimalsByCommodity = {
   aluminum: 2
 };
 
-// Commodity names and colors
+// Commodity names and colors - UPDATED with Brent Crude Oil
 const COMMODITY_CONFIG = {
   wheat: { 
     name: 'Wheat CBOT', 
@@ -96,15 +92,15 @@ const COMMODITY_CONFIG = {
   palm: { 
     name: 'Palm Oil', 
     icon: '🌴', 
-    excelColor: '#3B82F6', 
+    excelColor: '#F59E0B', // Orange for palm oil
     apiColor: '#10B981',
     category: 'Oils',
     showInChart: true
   },
   crude_palm: { 
-    name: 'Crude Palm Oil', 
+    name: 'Brent Crude Oil',  // RENAMED
     icon: '🛢️', 
-    excelColor: '#3B82F6', 
+    excelColor: '#EF4444', // Red for crude
     apiColor: '#10B981',
     category: 'Oils',
     showInChart: true
@@ -112,15 +108,15 @@ const COMMODITY_CONFIG = {
   sugar: { 
     name: 'Sugar', 
     icon: '🍬', 
-    excelColor: '#3B82F6', 
+    excelColor: '#EC4899', // Pink
     apiColor: '#10B981',
     category: 'Softs',
     showInChart: true
   },
   aluminum: { 
-    name: 'Aluminum (Raw Material)',
+    name: 'Aluminum',
     icon: '🥫', 
-    excelColor: '#3B82F6', 
+    excelColor: '#06B6D4', // Cyan
     apiColor: '#10B981',
     category: 'Metals',
     showInChart: true
@@ -138,8 +134,8 @@ const DEFAULT_CHART_COMMODITY = CHART_COMMODITIES[0];
 const EXCEL_DATA_SOURCES = {
   wheat: COMPLETE_WHEAT_DATA,
   milling_wheat: COMPLETE_WHEAT_DATA,
-  palm: COMPLETE_PALM_OIL_DATA,
-  crude_palm: COMPLETE_CRUDE_PALM_OIL_DATA,
+  palm: COMPLETE_PALM_OIL_DATA,  // This is now USD/tonne
+  crude_palm: COMPLETE_CRUDE_PALM_OIL_DATA,  // This is USD/kg
   sugar: SUGAR_MONTH_COST,
   aluminum: CAN_DATA
 };
@@ -227,71 +223,73 @@ function filterRecentData(data, maxYearsBack = 5) {
   });
 }
 
-// NEW: Function to fetch daily FX rates
-async function fetchFXRateForDate(dateStr, fromCurrency, toCurrency) {
+// NEW: Function to fetch historical FX rates for specific dates
+async function fetchHistoricalFXRate(dateStr, fromCurrency, toCurrency) {
   try {
     if (fromCurrency === toCurrency) return 1;
     
-    // For historical dates, use an API or fallback to default
     const date = new Date(dateStr);
-    const today = new Date();
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
     
-    // If date is within last 90 days, use real API
-    const daysDiff = Math.floor((today - date) / (1000 * 60 * 60 * 24));
+    // For real implementation, you would use a historical FX API
+    // For now, using approximate historical rates
+    const historicalRates = {
+      // USD to NGN historical rates
+      'USD_NGN': {
+        '2020': 380, '2021': 410, '2022': 450,
+        '2023': 750, '2024': 900, '2025': 1460
+      },
+      // EUR to USD historical rates
+      'EUR_USD': {
+        '2020': 1.18, '2021': 1.20, '2022': 1.05,
+        '2023': 1.08, '2024': 1.07, '2025': 1.08
+      },
+      // MYR to USD historical rates (for palm oil)
+      'MYR_USD': {
+        '2020': 0.24, '2021': 0.24, '2022': 0.22,
+        '2023': 0.21, '2024': 0.21, '2025': 0.21
+      }
+    };
     
-    if (daysDiff <= 90) {
-      // You would need to implement a real FX API here
-      // For now, using fallback rates
-      console.log(`Fetching FX rate for ${dateStr}: ${fromCurrency} to ${toCurrency}`);
+    const key = `${fromCurrency}_${toCurrency}`;
+    
+    if (historicalRates[key] && historicalRates[key][year]) {
+      return historicalRates[key][year];
     }
     
-    // Fallback to default rates for now
-    const key = `${fromCurrency}_to_${toCurrency}`;
+    // Fallback to default rates
+    const defaultKey = `${fromCurrency}_to_${toCurrency}`;
     const reverseKey = `${toCurrency}_to_${fromCurrency}`;
     
-    if (DEFAULT_FX_RATES[key]) {
-      return DEFAULT_FX_RATES[key];
+    if (DEFAULT_FX_RATES[defaultKey]) {
+      return DEFAULT_FX_RATES[defaultKey];
     } else if (DEFAULT_FX_RATES[reverseKey]) {
       return 1 / DEFAULT_FX_RATES[reverseKey];
     }
     
-    // Default fallback if no rate found
-    const defaultRates = {
-      'USD_NGN': 1460,
-      'EUR_NGN': 1600,
-      'GHS_USD': 0.087,
-      'GHS_NGN': 1460 * 0.087, // ~127
-      'EUR_USD': 1.08,
-      'MYR_USD': 0.21,
-      'MYR_NGN': 1460 * 0.21 // ~307
-    };
-    
-    const fallbackKey = `${fromCurrency}_${toCurrency}`;
-    return defaultRates[fallbackKey] || 1;
+    return 1;
     
   } catch (error) {
-    console.error('Error fetching FX rate:', error);
-    // Return default rate
+    console.error('Error fetching historical FX rate:', error);
     const key = `${fromCurrency}_to_${toCurrency}`;
     return DEFAULT_FX_RATES[key] || 1;
   }
 }
 
-// NEW: Convert price based on currency mode
-function convertPrice(price, fromCurrency, toCurrency, dateStr = null) {
+// NEW: Convert price based on currency mode with historical FX
+async function convertPriceWithHistoricalFX(price, fromCurrency, toCurrency, dateStr = null) {
   if (price == null || isNaN(Number(price))) return null;
   
   const value = Number(price);
   
   if (fromCurrency === toCurrency) return value;
   
-  // For real implementation, you would fetch actual FX rate for the date
-  // For now, using simplified conversion
-  const rate = getFXRate(fromCurrency, toCurrency);
+  const rate = await fetchHistoricalFXRate(dateStr, fromCurrency, toCurrency);
   return value * rate;
 }
 
-// Helper function to get FX rate
+// Helper function to get FX rate (for non-historical conversions)
 function getFXRate(fromCurrency, toCurrency) {
   const key = `${fromCurrency}_to_${toCurrency}`;
   const reverseKey = `${toCurrency}_to_${fromCurrency}`;
@@ -305,14 +303,14 @@ function getFXRate(fromCurrency, toCurrency) {
   return 1;
 }
 
-// Convert API value to target currency
-// Convert API value to target currency - FIXED for Palm Oil
-function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, dateStr = null) {
+// Convert API value to target currency - UPDATED FOR PALM OIL
+async function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, dateStr = null, currencyMode) {
   if (apiValue == null || isNaN(Number(apiValue))) return null;
   const value = Number(apiValue);
 
   let apiPriceInOriginalCurrency;
   let apiCurrency;
+  let apiUnit;
 
   switch(commodity) {
     case 'wheat':
@@ -320,6 +318,7 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
       const usdPerBushel = value / 100;
       apiPriceInOriginalCurrency = usdPerBushel / BUSHEL_TO_KG_WHEAT;
       apiCurrency = 'USD';
+      apiUnit = 'USD/kg';
       break;
 
     case 'milling_wheat':
@@ -327,21 +326,24 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
       const eurPerTonne = value;
       apiPriceInOriginalCurrency = eurPerTonne / TONNE_TO_KG;
       apiCurrency = 'EUR';
+      apiUnit = 'EUR/kg';
       break;
 
     case 'palm':
-      // FIXED: Palm Oil (KO*1) is in MYR per metric ton
-      // Convert MYR/tonne to MYR/kg
-      const myrPerTonne = value;
-      apiPriceInOriginalCurrency = myrPerTonne / TONNE_TO_KG; // Convert to MYR/kg
-      apiCurrency = 'MYR'; // API provides in MYR
+      // Palm Oil (KO*1) is in MYR per metric ton
+      // Keep as MYR/tonne (API provides in MYR/tonne)
+      apiPriceInOriginalCurrency = value; // MYR/tonne
+      apiCurrency = 'MYR';
+      apiUnit = 'MYR/tonne';
       break;
 
     case 'crude_palm':
-      // Crude Palm Oil: USD per barrel to USD/kg
-      const BARREL_TO_KG = 136.4;
-      apiPriceInOriginalCurrency = value / BARREL_TO_KG;
+      // Brent Crude Oil: CB*1 is in USD per barrel
+      // Convert to USD/tonne for comparison
+      const BARREL_TO_TONNE = 0.1364; // Approximate conversion
+      apiPriceInOriginalCurrency = value / BARREL_TO_TONNE;
       apiCurrency = 'USD';
+      apiUnit = 'USD/tonne';
       break;
     
     case 'sugar':
@@ -349,12 +351,14 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
       const usdPerLb = value / 100;
       apiPriceInOriginalCurrency = usdPerLb / LB_TO_KG;
       apiCurrency = 'USD';
+      apiUnit = 'USD/kg';
       break;
 
     case 'aluminum':
-      // Aluminum: USD per tonne to USD/kg
-      apiPriceInOriginalCurrency = value / TONNE_TO_KG;
+      // Aluminum: USD per tonne
+      apiPriceInOriginalCurrency = value; // Already USD/tonne
       apiCurrency = 'USD';
+      apiUnit = 'USD/tonne';
       break;
 
     default:
@@ -362,15 +366,23 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, da
   }
 
   // Convert to target currency if needed
-  if (apiCurrency !== targetCurrency) {
-    return convertPrice(apiPriceInOriginalCurrency, apiCurrency, targetCurrency, dateStr);
+  let finalPrice = apiPriceInOriginalCurrency;
+  
+  if (currencyMode === 'ngn' && apiCurrency !== 'NGN') {
+    // Convert to NGN
+    const rate = await fetchHistoricalFXRate(dateStr, apiCurrency, 'NGN');
+    finalPrice = apiPriceInOriginalCurrency * rate;
+  } else if (currencyMode === 'original' && apiCurrency !== targetCurrency) {
+    // Convert to target currency
+    const rate = await fetchHistoricalFXRate(dateStr, apiCurrency, targetCurrency);
+    finalPrice = apiPriceInOriginalCurrency * rate;
   }
 
-  return apiPriceInOriginalCurrency;
+  return finalPrice;
 }
-// Convert Excel purchase price to target currency
-// Convert Excel purchase price to target currency - FIXED for Palm Oil
-function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency) {
+
+// Convert Excel purchase price to target currency - UPDATED FOR PALM OIL
+async function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency, currencyMode, dateStr) {
   if (!excelItem) return null;
   
   let priceInOriginalCurrency;
@@ -379,11 +391,10 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
   switch(commodity) {
     case 'wheat':
     case 'milling_wheat':
-      // Convert all wheat purchases to USD for consistency
       if (excelItem.currency === 'GHS') {
-        // Convert GHS to USD
-        const usdRate = excelItem.rate * getFXRate('GHS', 'USD');
-        priceInOriginalCurrency = usdRate;
+        // Convert GHS to USD first
+        const ghsToUsdRate = await fetchHistoricalFXRate(dateStr, 'GHS', 'USD');
+        priceInOriginalCurrency = excelItem.rate * ghsToUsdRate;
         excelCurrency = 'USD';
       } else {
         priceInOriginalCurrency = excelItem.rate;
@@ -392,14 +403,15 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
       break;
       
     case 'palm':
-      // FIX: Excel data is already in GHS/kg
-      priceInOriginalCurrency = excelItem.rate;
-      excelCurrency = 'GHS'; // Force GHS for Palm Oil Excel data
+      // Palm oil: Excel data is in USD/tonne
+      priceInOriginalCurrency = excelItem.rate; // This is USD/tonne
+      excelCurrency = 'USD';
       break;
       
     case 'crude_palm':
+      // Brent Crude: Excel data is in USD/kg
       priceInOriginalCurrency = excelItem.rate;
-      excelCurrency = excelItem.currency || 'USD';
+      excelCurrency = 'USD';
       break;
       
     case 'sugar':
@@ -408,7 +420,7 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
       break;
       
     case 'aluminum':
-      priceInOriginalCurrency = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
+      priceInOriginalCurrency = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE;
       excelCurrency = 'USD';
       break;
       
@@ -416,9 +428,16 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency)
       return null;
   }
 
-  // Convert to target currency if needed
-  if (excelCurrency !== targetCurrency) {
-    return convertPrice(priceInOriginalCurrency, excelCurrency, targetCurrency, excelItem.poDate || excelItem.month);
+  // If currency mode is NGN, convert from original currency to NGN
+  if (currencyMode === 'ngn' && excelCurrency !== 'NGN') {
+    const rate = await fetchHistoricalFXRate(dateStr, excelCurrency, 'NGN');
+    return priceInOriginalCurrency * rate;
+  }
+
+  // If currency mode is original but target currency is different, convert
+  if (currencyMode === 'original' && excelCurrency !== targetCurrency) {
+    const rate = await fetchHistoricalFXRate(dateStr, excelCurrency, targetCurrency);
+    return priceInOriginalCurrency * rate;
   }
 
   return priceInOriginalCurrency;
@@ -440,8 +459,8 @@ function getExcelDateForMonth(commodity, excelItem) {
   }
 }
 
-// Process Excel data by month (average per month) - Updated for currency mode
-function processExcelDataByMonth(commodity, currencyMode) {
+// Process Excel data by month (average per month) - UPDATED FOR PALM OIL
+async function processExcelDataByMonth(commodity, currencyMode) {
   const rawData = EXCEL_DATA_SOURCES[commodity] || [];
   
   console.log(`Processing ${commodity} data in ${currencyMode} mode:`, {
@@ -454,13 +473,14 @@ function processExcelDataByMonth(commodity, currencyMode) {
   
   const monthlyData = {};
   
-  rawData.forEach((item, index) => {
+  // Process each Excel item
+  for (const item of rawData) {
     const dateStr = getExcelDateForMonth(commodity, item);
     const monthKey = getMonthKey(dateStr);
     
     if (!monthKey) {
-      console.warn(`Could not parse date for ${commodity} item ${index}:`, dateStr);
-      return;
+      console.warn(`Could not parse date for ${commodity} item:`, dateStr);
+      continue;
     }
     
     const year = parseInt(monthKey.split('-')[0]);
@@ -468,11 +488,18 @@ function processExcelDataByMonth(commodity, currencyMode) {
     
     if (year < 2020 || year > currentYear + 1) {
       console.warn(`Skipping unrealistic year for ${commodity}:`, monthKey, 'from date:', dateStr);
-      return;
+      continue;
     }
     
-    const priceInTargetCurrency = convertExcelPriceToTargetCurrency(commodity, item, targetCurrency);
-    if (priceInTargetCurrency == null) return;
+    const priceInTargetCurrency = await convertExcelPriceToTargetCurrency(
+      commodity, 
+      item, 
+      targetCurrency,
+      currencyMode,
+      dateStr
+    );
+    
+    if (priceInTargetCurrency == null) continue;
     
     if (!monthlyData[monthKey]) {
       monthlyData[monthKey] = {
@@ -486,7 +513,7 @@ function processExcelDataByMonth(commodity, currencyMode) {
     monthlyData[monthKey].values.push(priceInTargetCurrency);
     monthlyData[monthKey].dates.push(dateStr);
     monthlyData[monthKey].currencies.push(item.currency || COMMODITY_CURRENCIES[commodity]);
-  });
+  }
   
   const result = Object.values(monthlyData).map(month => ({
     monthKey: month.monthKey,
@@ -494,7 +521,8 @@ function processExcelDataByMonth(commodity, currencyMode) {
     excelPrice: month.values.reduce((sum, val) => sum + val, 0) / month.values.length,
     transactionCount: month.values.length,
     dates: month.dates,
-    currencies: month.currencies
+    currencies: month.currencies,
+    unit: COMMODITY_UNITS[commodity].excel
   })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
   
   const filteredResult = filterRecentData(result, 5);
@@ -502,14 +530,15 @@ function processExcelDataByMonth(commodity, currencyMode) {
   console.log(`${commodity} processed data in ${currencyMode}:`, {
     totalMonths: result.length,
     filteredMonths: filteredResult.length,
-    targetCurrency
+    targetCurrency,
+    sampleMonths: filteredResult.slice(0, 3)
   });
   
   return filteredResult;
 }
 
-// Fetch monthly prices with better variation detection
-async function fetchMonthlyPricesWithVariation(symbol, months) {
+// Fetch monthly prices from REAL API
+async function fetchMonthlyPricesWithVariation(symbol, months, commodity, currencyMode) {
   try {
     const monthlyResults = [];
     
@@ -523,7 +552,7 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
       return [];
     }
     
-    console.log(`Fetching REAL API data for ${symbol}, months:`, recentMonths);
+    console.log(`Fetching REAL API data for ${symbol} (${commodity}), months:`, recentMonths);
     
     for (const month of recentMonths) {
       const [year, monthNum] = month.split('-').map(Number);
@@ -554,7 +583,6 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
         const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
         
         const dailyPrices = [];
-        console.log(`Raw CSV lines for ${month}:`, lines.length);
         
         lines.forEach((line, index) => {
           const parts = line.split(',').map(p => p.trim());
@@ -579,14 +607,28 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
           const sum = dailyPrices.reduce((sum, day) => sum + day.price, 0);
           const monthlyAvg = sum / dailyPrices.length;
           
+          // Convert to target currency
+          const targetCurrency = currencyMode === 'original' 
+            ? COMMODITY_CURRENCIES[commodity] 
+            : 'NGN';
+          
+          const convertedPrice = await convertApiValueToTargetCurrency(
+            commodity, 
+            monthlyAvg, 
+            targetCurrency,
+            dailyPrices[0]?.date,
+            currencyMode
+          );
+          
           monthlyResults.push({
             monthKey: month,
-            avgPrice: monthlyAvg,
+            avgPrice: convertedPrice,
             dataPoints: dailyPrices.length,
-            sampleDates: dailyPrices.slice(0, 3).map(d => d.date)
+            sampleDates: dailyPrices.slice(0, 3).map(d => d.date),
+            source: 'real_api'
           });
           
-          console.log(`✅ ${month} for ${symbol}: ${dailyPrices.length} trading days, avg: ${monthlyAvg.toFixed(2)}`);
+          console.log(`✅ ${month} for ${symbol}: ${dailyPrices.length} trading days, converted: ${convertedPrice?.toFixed(2)} ${targetCurrency}`);
         } else {
           console.warn(`No valid daily prices for ${month} - ${symbol}`);
         }
@@ -606,16 +648,12 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
   }
 }
 
-// Process API data by month - Updated for currency mode
-function processApiDataByMonth(commodity, apiMonthlyData, currencyMode) {
-  const targetCurrency = currencyMode === 'original' 
-    ? COMMODITY_CURRENCIES[commodity] 
-    : 'NGN';
-  
+// Process API data by month
+function processApiDataByMonth(commodity, apiMonthlyData) {
   return apiMonthlyData.map(item => ({
     monthKey: item.monthKey,
     monthDisplay: getMonthDisplay(item.monthKey),
-    apiPrice: convertApiValueToTargetCurrency(commodity, item.avgPrice, targetCurrency, item.sampleDates?.[0]),
+    apiPrice: item.avgPrice,
     dataPoints: item.dataPoints,
     source: item.source || 'api'
   })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
@@ -636,14 +674,157 @@ function combineMonthlyData(excelMonthly, apiMonthly) {
       apiPrice: apiMonth?.apiPrice || null,
       excelTransactions: excelMonth?.transactionCount || 0,
       apiDataPoints: apiMonth?.dataPoints || 0,
-      apiSource: apiMonth?.source || 'none'
+      apiSource: apiMonth?.source || 'none',
+      excelUnit: excelMonth?.unit || '',
+      unit: excelMonth?.unit || COMMODITY_UNITS[excelMonth?.commodity]?.chart || ''
     };
   });
 }
 
+// Fetch current price with history
+async function fetchCurrentPriceWithHistory(symbol, commodity, currencyMode) {
+  try {
+    const dailyData = await fetchDailyPrices(symbol, 365);
+    
+    if (dailyData.length === 0) {
+      console.warn(`No daily data for ${symbol}`);
+      return null;
+    }
+    
+    const latest = dailyData[dailyData.length - 1];
+    const weekAgoIndex = Math.max(0, dailyData.length - 8);
+    const weekAgo = dailyData[weekAgoIndex];
+    const monthAgoIndex = Math.max(0, dailyData.length - 31);
+    const monthAgo = dailyData[monthAgoIndex];
+    const yearAgoIndex = Math.max(0, dailyData.length - 366);
+    const yearAgo = dailyData[yearAgoIndex];
+    
+    const targetCurrency = currencyMode === 'original' 
+      ? COMMODITY_CURRENCIES[commodity] 
+      : 'NGN';
+    
+    // Convert all prices
+    const current = await convertApiValueToTargetCurrency(
+      commodity, 
+      latest.price, 
+      targetCurrency,
+      latest.date,
+      currencyMode
+    );
+    
+    const previous = dailyData.length >= 2 ? 
+      await convertApiValueToTargetCurrency(
+        commodity, 
+        dailyData[dailyData.length - 2].price, 
+        targetCurrency,
+        dailyData[dailyData.length - 2].date,
+        currencyMode
+      ) : null;
+    
+    const weekAgoConverted = weekAgo ? 
+      await convertApiValueToTargetCurrency(
+        commodity, 
+        weekAgo.price, 
+        targetCurrency,
+        weekAgo.date,
+        currencyMode
+      ) : null;
+    
+    const monthAgoConverted = monthAgo ? 
+      await convertApiValueToTargetCurrency(
+        commodity, 
+        monthAgo.price, 
+        targetCurrency,
+        monthAgo.date,
+        currencyMode
+      ) : null;
+    
+    const yearAgoConverted = yearAgo ? 
+      await convertApiValueToTargetCurrency(
+        commodity, 
+        yearAgo.price, 
+        targetCurrency,
+        yearAgo.date,
+        currencyMode
+      ) : null;
+    
+    return {
+      current,
+      previous,
+      weekAgo: weekAgoConverted,
+      monthAgo: monthAgoConverted,
+      yearAgo: yearAgoConverted,
+      date: latest.date,
+      weekAgoDate: weekAgo?.date || null,
+      monthAgoDate: monthAgo?.date || null,
+      yearAgoDate: yearAgo?.date || null
+    };
+    
+  } catch (error) {
+    console.error(`Error fetching current price with history for ${symbol}:`, error);
+    return null;
+  }
+}
+
+// Fetch daily prices
+async function fetchDailyPrices(symbol, days = 30) {
+  try {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+    
+    const startStr = formatDateForAPI(startDate);
+    const endStr = formatDateForAPI(endDate);
+    
+    const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
+    
+    console.log(`Fetching daily prices for ${symbol}: ${url}`);
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const text = await response.text();
+    
+    if (!text || text.includes('error') || text.includes('No data')) {
+      return [];
+    }
+    
+    const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
+    
+    const dailyData = [];
+    lines.forEach(line => {
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length >= 6) {
+        const symbol = parts[0];
+        const date = parts[1];
+        const closePrice = parseFloat(parts[5]);
+        const volume = parts.length > 6 ? parseInt(parts[6]) : 0;
+        
+        if (!isNaN(closePrice) && closePrice > 0) {
+          dailyData.push({
+            date,
+            price: closePrice,
+            volume: volume || 0,
+            symbol: symbol
+          });
+        }
+      }
+    });
+    
+    console.log(`Fetched ${dailyData.length} daily prices for ${symbol}`);
+    return dailyData.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+  } catch (error) {
+    console.error(`Error fetching daily prices for ${symbol}:`, error);
+    return [];
+  }
+}
+
+// Main Component
 const CommodityDashboard = () => {
-  // NEW: Currency mode state
-  const [currencyMode, setCurrencyMode] = useState('original'); // 'original' or 'ngn'
+  const [currencyMode, setCurrencyMode] = useState('original');
   const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
   const [commodityData, setCommodityData] = useState({});
   const [monthlyComparisonData, setMonthlyComparisonData] = useState({});
@@ -654,53 +835,16 @@ const CommodityDashboard = () => {
   const [dataDebug, setDataDebug] = useState('');
   const [apiStatus, setApiStatus] = useState('connecting');
 
-  // Process Excel data by month - Updated with currency mode
+  // Process Excel data by month - Memoized
   const excelMonthlyData = useMemo(() => {
-    console.log(`Processing Excel data for all commodities in ${currencyMode} mode...`);
     const data = {};
     Object.keys(COMMODITY_CONFIG).forEach(commodity => {
-      data[commodity] = processExcelDataByMonth(commodity, currencyMode);
+      data[commodity] = [];
     });
-    
-    // Handle aluminum data
-    if (!data.aluminum || data.aluminum.length === 0) {
-      const months = [];
-      const currentDate = new Date();
-      const startDate = new Date(2020, 0, 1);
-      
-      const targetCurrency = currencyMode === 'original' ? 'USD' : 'NGN';
-      const baseUsdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
-      
-      for (let d = new Date(startDate); d <= currentDate; d.setMonth(d.getMonth() + 1)) {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const monthKey = `${year}-${month}`;
-        
-        let price;
-        if (targetCurrency === 'USD') {
-          price = baseUsdPerKg;
-        } else {
-          price = baseUsdPerKg * getFXRate('USD', 'NGN');
-        }
-        
-        months.push({
-          monthKey,
-          monthDisplay: getMonthDisplay(monthKey),
-          excelPrice: price,
-          transactionCount: 1,
-          dates: [monthKey],
-          currencies: ['USD']
-        });
-      }
-      
-      data.aluminum = months;
-      console.log(`Generated aluminum data in ${currencyMode} mode:`, months.length, 'months');
-    }
-    
     return data;
-  }, [currencyMode]);
+  }, []);
 
-  // Fetch live prices for all commodities - Updated for currency mode
+  // Fetch live prices for all commodities
   useEffect(() => {
     const fetchLivePrices = async () => {
       setLoadingLivePrices(true);
@@ -712,7 +856,7 @@ const CommodityDashboard = () => {
         for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
           console.log(`Fetching live price with history for ${commodity} (${symbol})...`);
           
-          const priceData = await fetchCurrentPriceWithHistory(symbol);
+          const priceData = await fetchCurrentPriceWithHistory(symbol, commodity, currencyMode);
           
           if (!priceData) {
             console.warn(`No live price data for ${commodity}`);
@@ -725,49 +869,36 @@ const CommodityDashboard = () => {
               percentages: { day: null, week: null, month: null, year: null },
               symbol,
               lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              status: 'no_data'
+              status: 'no_data',
+              unit: COMMODITY_UNITS[commodity].chart
             };
             continue;
           }
           
-          const targetCurrency = currencyMode === 'original' 
-            ? COMMODITY_CURRENCIES[commodity] 
-            : 'NGN';
-          
-          const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency);
-          const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency) : null;
-          const weekAgo = priceData.weekAgo ? convertApiValueToTargetCurrency(commodity, priceData.weekAgo, targetCurrency) : null;
-          const monthAgo = priceData.monthAgo ? convertApiValueToTargetCurrency(commodity, priceData.monthAgo, targetCurrency) : null;
-          const yearAgo = priceData.yearAgo ? convertApiValueToTargetCurrency(commodity, priceData.yearAgo, targetCurrency) : null;
-          
           const percentages = {
-            day: previous ? calculatePercentageChange(current, previous) : null,
-            week: weekAgo ? calculatePercentageChange(current, weekAgo) : null,
-            month: monthAgo ? calculatePercentageChange(current, monthAgo) : null,
-            year: yearAgo ? calculatePercentageChange(current, yearAgo) : null
+            day: priceData.previous ? calculatePercentageChange(priceData.current, priceData.previous) : null,
+            week: priceData.weekAgo ? calculatePercentageChange(priceData.current, priceData.weekAgo) : null,
+            month: priceData.monthAgo ? calculatePercentageChange(priceData.current, priceData.monthAgo) : null,
+            year: priceData.yearAgo ? calculatePercentageChange(priceData.current, priceData.yearAgo) : null
           };
           
           liveData[commodity] = {
-            current,
-            previous,
-            weekAgo,
-            monthAgo,
-            yearAgo,
+            current: priceData.current,
+            previous: priceData.previous,
+            weekAgo: priceData.weekAgo,
+            monthAgo: priceData.monthAgo,
+            yearAgo: priceData.yearAgo,
             percentages,
             symbol,
             lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: 'success',
-            rawData: {
-              currentUSD: priceData.current,
-              previousUSD: priceData.previous,
-              weekAgoUSD: priceData.weekAgo,
-              monthAgoUSD: priceData.monthAgo,
-              yearAgoUSD: priceData.yearAgo
-            }
+            unit: COMMODITY_UNITS[commodity].chart,
+            currency: currencyMode === 'original' ? COMMODITY_CURRENCIES[commodity] : 'NGN'
           };
           
-          console.log(`Live price for ${commodity} in ${targetCurrency}:`, {
-            current,
+          console.log(`Live price for ${commodity}:`, {
+            current: priceData.current,
+            unit: COMMODITY_UNITS[commodity].chart,
             percentages
           });
           
@@ -792,7 +923,9 @@ const CommodityDashboard = () => {
             percentages: { day: null, week: null, month: null, year: null },
             symbol: COMMODITY_SYMBOLS[commodity],
             lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: 'error'
+            status: 'error',
+            unit: COMMODITY_UNITS[commodity].chart,
+            currency: currencyMode === 'original' ? COMMODITY_CURRENCIES[commodity] : 'NGN'
           };
         });
         
@@ -809,7 +942,7 @@ const CommodityDashboard = () => {
     return () => clearInterval(intervalId);
   }, [currencyMode]);
 
-  // Fetch API data and combine with Excel data - Updated for currency mode
+  // Fetch API data and combine with Excel data
   useEffect(() => {
     const fetchAllCommodityData = async () => {
       setLoading(true);
@@ -818,7 +951,7 @@ const CommodityDashboard = () => {
       
       try {
         const dataPromises = Object.entries(COMMODITY_SYMBOLS).map(async ([commodity, symbol]) => {
-          const excelMonthly = excelMonthlyData[commodity] || [];
+          const excelMonthly = await processExcelDataByMonth(commodity, currencyMode);
           
           console.log(`Fetching historical data for ${commodity}:`, {
             excelMonths: excelMonthly.length,
@@ -836,9 +969,9 @@ const CommodityDashboard = () => {
           }
           
           const excelMonths = excelMonthly.map(item => item.monthKey);
-          const apiMonthlyRaw = await fetchMonthlyPricesWithVariation(symbol, excelMonths);
+          const apiMonthlyRaw = await fetchMonthlyPricesWithVariation(symbol, excelMonths, commodity, currencyMode);
           
-          const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw, currencyMode);
+          const apiMonthly = processApiDataByMonth(commodity, apiMonthlyRaw);
           const combinedData = combineMonthlyData(excelMonthly, apiMonthly);
           
           const apiPrices = combinedData.filter(d => d.apiPrice).map(d => d.apiPrice);
@@ -889,15 +1022,16 @@ const CommodityDashboard = () => {
         const emptyData = {};
         const emptyComparison = {};
         
-        Object.keys(COMMODITY_CONFIG).forEach(commodity => {
-          const excelMonthly = excelMonthlyData[commodity] || [];
+        Object.keys(COMMODITY_CONFIG).forEach(async (commodity) => {
+          const excelMonthly = await processExcelDataByMonth(commodity, currencyMode);
           const combinedData = excelMonthly.map(item => ({
             monthKey: item.monthKey,
             monthDisplay: item.monthDisplay,
             excelPrice: item.excelPrice,
             apiPrice: null,
             excelTransactions: item.transactionCount,
-            apiDataPoints: 0
+            apiDataPoints: 0,
+            unit: item.unit
           }));
           
           emptyData[commodity] = {
@@ -921,101 +1055,9 @@ const CommodityDashboard = () => {
     const intervalId = setInterval(fetchAllCommodityData, 10 * 60 * 1000);
     
     return () => clearInterval(intervalId);
-  }, [excelMonthlyData, currencyMode]);
+  }, [currencyMode]);
 
-  // Helper functions (keep these from original)
-  async function fetchCurrentPriceWithHistory(symbol) {
-    // Keep the same implementation as before
-    try {
-      const dailyData = await fetchDailyPrices(symbol, 365);
-      
-      if (dailyData.length === 0) {
-        console.warn(`No daily data for ${symbol}`);
-        return null;
-      }
-      
-      const latest = dailyData[dailyData.length - 1];
-      const weekAgoIndex = Math.max(0, dailyData.length - 8);
-      const weekAgo = dailyData[weekAgoIndex];
-      const monthAgoIndex = Math.max(0, dailyData.length - 31);
-      const monthAgo = dailyData[monthAgoIndex];
-      const yearAgoIndex = Math.max(0, dailyData.length - 366);
-      const yearAgo = dailyData[yearAgoIndex];
-      
-      return {
-        current: latest.price,
-        previous: dailyData.length >= 2 ? dailyData[dailyData.length - 2].price : null,
-        weekAgo: weekAgo?.price || null,
-        monthAgo: monthAgo?.price || null,
-        yearAgo: yearAgo?.price || null,
-        date: latest.date,
-        weekAgoDate: weekAgo?.date || null,
-        monthAgoDate: monthAgo?.date || null,
-        yearAgoDate: yearAgo?.date || null
-      };
-      
-    } catch (error) {
-      console.error(`Error fetching current price with history for ${symbol}:`, error);
-      return null;
-    }
-  }
-
-  async function fetchDailyPrices(symbol, days = 30) {
-    // Keep the same implementation as before
-    try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - days);
-      
-      const startStr = formatDateForAPI(startDate);
-      const endStr = formatDateForAPI(endDate);
-      
-      const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
-      
-      console.log(`Fetching daily prices for ${symbol}: ${url}`);
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const text = await response.text();
-      
-      if (!text || text.includes('error') || text.includes('No data')) {
-        return [];
-      }
-      
-      const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
-      
-      const dailyData = [];
-      lines.forEach(line => {
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length >= 6) {
-          const symbol = parts[0];
-          const date = parts[1];
-          const closePrice = parseFloat(parts[5]);
-          const volume = parts.length > 6 ? parseInt(parts[6]) : 0;
-          
-          if (!isNaN(closePrice) && closePrice > 0) {
-            dailyData.push({
-              date,
-              price: closePrice,
-              volume: volume || 0,
-              symbol: symbol
-            });
-          }
-        }
-      });
-      
-      console.log(`Fetched ${dailyData.length} daily prices for ${symbol}`);
-      return dailyData.sort((a, b) => new Date(a.date) - new Date(b.date));
-      
-    } catch (error) {
-      console.error(`Error fetching daily prices for ${symbol}:`, error);
-      return [];
-    }
-  }
-
+  // Helper function to calculate percentage change
   function calculatePercentageChange(current, previous) {
     if (!previous || previous === 0 || !current) return null;
     return ((current - previous) / previous) * 100;
@@ -1033,19 +1075,18 @@ const CommodityDashboard = () => {
       apiPrice: item.apiPrice,
       excelTransactions: item.excelTransactions,
       apiDataPoints: item.apiDataPoints,
-      apiSource: item.apiSource
+      apiSource: item.apiSource,
+      unit: item.unit || COMMODITY_UNITS[selectedCommodity]?.chart
     }));
   };
 
-  // Custom tooltip for chart - Updated for currency mode
+  // Custom tooltip for chart
   const CustomTooltip = ({ active, payload }) => {
     if (!active || !payload?.[0]) return null;
     const data = payload[0].payload;
     const config = COMMODITY_CONFIG[selectedCommodity];
     const dec = decimalsByCommodity[selectedCommodity] || 2;
-    const targetCurrency = currencyMode === 'original' 
-      ? COMMODITY_CURRENCIES[selectedCommodity] 
-      : 'NGN';
+    const unit = data.unit || COMMODITY_UNITS[selectedCommodity]?.chart || '';
 
     return (
       <div style={{
@@ -1071,7 +1112,7 @@ const CommodityDashboard = () => {
             alignItems: 'center'
           }}>
             <span style={{ fontWeight: 'bold', color: config.excelColor, fontSize: '16px' }}>
-              {data.excelPrice.toFixed(dec)} {targetCurrency}/kg
+              {data.excelPrice.toFixed(dec)} {unit}
             </span>
             {selectedCommodity === 'aluminum' ? (
               <span style={{ fontSize: '11px', color: '#9ca3af' }}>
@@ -1090,7 +1131,7 @@ const CommodityDashboard = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
               <div style={{ width: '12px', height: '3px', backgroundColor: config.apiColor, borderRadius: '1px' }}></div>
               <span style={{ fontSize: '12px', color: '#6b7280' }}>Market Price (API)</span>
-              {data.apiSource === 'real_variation' && (
+              {data.apiSource === 'real_api' && (
                 <span style={{
                   fontSize: '10px',
                   backgroundColor: '#fef3c7',
@@ -1098,7 +1139,7 @@ const CommodityDashboard = () => {
                   padding: '1px 4px',
                   borderRadius: '3px'
                 }}>
-                  Adjusted
+                  Live API
                 </span>
               )}
             </div>
@@ -1108,7 +1149,7 @@ const CommodityDashboard = () => {
               alignItems: 'center'
             }}>
               <span style={{ fontWeight: 'bold', color: config.apiColor, fontSize: '16px' }}>
-                {data.apiPrice.toFixed(dec)} {targetCurrency}/kg
+                {data.apiPrice.toFixed(dec)} {unit}
               </span>
               <span style={{ fontSize: '11px', color: '#9ca3af' }}>
                 {data.apiDataPoints} trading day{data.apiDataPoints !== 1 ? 's' : ''}
@@ -1159,7 +1200,7 @@ const CommodityDashboard = () => {
                 fontSize: '13px',
                 color: data.excelPrice <= data.apiPrice ? '#059669' : '#dc2626'
               }}>
-                {Math.abs(data.excelPrice - data.apiPrice).toFixed(dec)} {targetCurrency}/kg
+                {Math.abs(data.excelPrice - data.apiPrice).toFixed(dec)} {unit}
               </span>
             </div>
           </div>
@@ -1171,11 +1212,15 @@ const CommodityDashboard = () => {
   if (loading) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
-        <div style={{ marginBottom: '16px' }}>Loading monthly commodity dashboard...</div>
+        <div style={{ marginBottom: '16px' }}>Loading commodity dashboard...</div>
         <div style={{ color: '#666', fontSize: '14px' }}>Processing Excel data and fetching REAL market prices from API...</div>
       </div>
     );
   }
+
+  const chartData = prepareChartData();
+  const selectedConfig = COMMODITY_CONFIG[selectedCommodity];
+  const unit = COMMODITY_UNITS[selectedCommodity]?.chart || '';
 
   return (
     <div style={{
@@ -1191,34 +1236,19 @@ const CommodityDashboard = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 600, color: '#1e40af' }}>
-              📈 Monthly Commodity Price Comparison
+              📈 Commodity Price Intelligence
             </h2>
             <div style={{ color: '#666', fontSize: '14px', marginTop: '8px' }}>
-              Monthly Averages: Our Purchases vs Market Prices | 
-              Currency Mode: {currencyMode === 'original' ? 'Document Currency' : 'NGN'}
+              Real-time market comparison with historical FX rates • Dynamic unit conversion
             </div>
           </div>
           
-          {/* NEW: Currency Toggle Button */}
+          {/* Currency Toggle Button */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '12px'
           }}>
-            <div style={{
-              padding: '8px 16px',
-              backgroundColor: '#d1fae5',
-              borderRadius: '8px',
-              border: '2px solid #10b981',
-              fontSize: '14px',
-              fontWeight: '600',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              🌐 Real API Data Only
-            </div>
-            
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -1270,6 +1300,27 @@ const CommodityDashboard = () => {
                 <span>NGN</span>
               </button>
             </div>
+            
+            {/* Status Badge */}
+            <div style={{
+              padding: '8px 16px',
+              backgroundColor: apiStatus === 'connected' ? '#d1fae5' : 
+                              apiStatus === 'error' ? '#fee2e2' : '#fef3c7',
+              borderRadius: '8px',
+              border: `2px solid ${apiStatus === 'connected' ? '#10b981' : 
+                                 apiStatus === 'error' ? '#dc2626' : '#fbbf24'}`,
+              fontSize: '14px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span style={{ fontSize: '18px' }}>
+                {apiStatus === 'connected' ? '✅' : apiStatus === 'error' ? '⚠️' : '🔄'}
+              </span>
+              {apiStatus === 'connected' ? 'API Connected' : 
+               apiStatus === 'error' ? 'API Error' : 'Connecting...'}
+            </div>
           </div>
         </div>
         
@@ -1297,50 +1348,10 @@ const CommodityDashboard = () => {
               </span>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
                 {currencyMode === 'original' 
-                  ? `• Wheat/Milling Wheat: USD/kg • Palm Oil: GHS/kg • Crude Palm Oil: USD/kg • Sugar: NGN/kg • Aluminum: USD/kg`
-                  : '• All commodities: NGN/kg • Using FX rates for conversion'}
+                  ? `• Wheat: USD/kg • Milling Wheat: USD/kg • Palm Oil: USD/tonne • Brent Crude: USD/kg • Sugar: NGN/kg • Aluminum: USD/tonne`
+                  : '• All commodities converted to NGN using historical FX rates'}
               </div>
             </div>
-          </div>
-        </div>
-        
-        {/* API Status Banner */}
-        <div style={{
-          padding: '12px 16px',
-          backgroundColor: apiStatus === 'connected' ? '#d1fae5' : 
-                          apiStatus === 'error' ? '#fee2e2' : '#fef3c7',
-          borderRadius: '8px',
-          border: `2px solid ${apiStatus === 'connected' ? '#10b981' : 
-                             apiStatus === 'error' ? '#dc2626' : '#fbbf24'}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          marginBottom: '16px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>
-              {apiStatus === 'connected' ? '✅' : apiStatus === 'error' ? '⚠️' : '🔄'}
-            </span>
-            <span style={{ 
-              fontWeight: '600', 
-              color: apiStatus === 'connected' ? '#065f46' : 
-                     apiStatus === 'error' ? '#dc2626' : '#92400e',
-              fontSize: '14px'
-            }}>
-              {apiStatus === 'connected' ? 'LIVE MODE: Connected to DDFPlus API' :
-               apiStatus === 'error' ? 'API ERROR: Failed to fetch market data' :
-               'CONNECTING: Fetching real-time market data...'}
-            </span>
-          </div>
-          
-          <div style={{
-            fontSize: '11px',
-            color: apiStatus === 'connected' ? '#059669' : 
-                   apiStatus === 'error' ? '#dc2626' : '#d97706',
-            fontWeight: '600'
-          }}>
-            {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
       </div>
@@ -1374,467 +1385,325 @@ const CommodityDashboard = () => {
         </div>
       )}
 
-      {/* Commodity Selector */}
-      <div style={{
-        display: 'flex',
-        gap: '12px',
-        marginBottom: '32px',
-        flexWrap: 'wrap'
-      }}>
-        {CHART_COMMODITIES.map(commodity => {
-          const config = COMMODITY_CONFIG[commodity];
-          const isSelected = selectedCommodity === commodity;
-          const comparisonData = monthlyComparisonData[commodity] || [];
-          const monthsWithExcelData = comparisonData.filter(item => item.excelPrice != null).length;
-          const monthsWithApiData = comparisonData.filter(item => item.apiPrice != null).length;
-          const apiCoverage = monthsWithExcelData > 0 ? Math.round((monthsWithApiData / monthsWithExcelData) * 100) : 0;
-          const apiPrices = comparisonData.filter(item => item.apiPrice).map(item => item.apiPrice);
-          const uniquePrices = [...new Set(apiPrices.map(p => p?.toFixed(2)))];
-          const hasVariation = uniquePrices.length > 1;
-          const targetCurrency = currencyMode === 'original' 
-            ? COMMODITY_CURRENCIES[commodity] 
-            : 'NGN';
-          
-          return (
-            <button
-              key={commodity}
-              onClick={() => setSelectedCommodity(commodity)}
-              style={{
-                padding: '12px 20px',
-                backgroundColor: isSelected ? '#1e40af' : '#f3f4f6',
-                color: isSelected ? 'white' : '#374151',
-                border: `2px solid ${isSelected ? '#1e40af' : '#e5e7eb'}`,
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                minWidth: '160px',
-                position: 'relative'
-              }}
-            >
-              <span style={{ fontSize: '18px' }}>{config.icon}</span>
-              <div style={{ textAlign: 'left' }}>
-                <div>{config.name}</div>
-                <div style={{ fontSize: '10px', color: isSelected ? '#bfdbfe' : '#6b7280' }}>
-                  {targetCurrency}/kg
-                </div>
-              </div>
-              {monthsWithExcelData > 0 && (
-                <span style={{
-                  marginLeft: 'auto',
-                  display: 'flex',
-                  gap: '4px',
-                  flexDirection: 'column',
-                  alignItems: 'flex-end'
-                }}>
-                  <span style={{
-                    display: 'flex',
-                    gap: '2px'
-                  }}>
-                    <span style={{
-                      fontSize: '8px',
-                      backgroundColor: '#3B82F6',
-                      color: 'white',
-                      padding: '1px 3px',
-                      borderRadius: '2px'
-                    }}>
-                      {monthsWithExcelData}
-                    </span>
-                    <span style={{
-                      fontSize: '8px',
-                      backgroundColor: monthsWithApiData > 0 ? 
-                        (hasVariation ? '#10B981' : '#f59e0b') : '#9ca3af',
-                      color: 'white',
-                      padding: '1px 3px',
-                      borderRadius: '2px'
-                    }}>
-                      {monthsWithApiData}
-                    </span>
-                  </span>
-                  <span style={{
-                    fontSize: '8px',
-                    color: apiCoverage >= 80 ? '#059669' : apiCoverage >= 50 ? '#d97706' : '#dc2626',
-                    fontWeight: 'bold'
-                  }}>
-                    {apiCoverage}% API {hasVariation ? '' : '⚠️'}
-                  </span>
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Main Dashboard */}
+      {/* Main Dashboard Layout */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 2fr',
         gap: '32px',
         marginBottom: '32px'
       }}>
-        {/* Left Column: Data Status */}
+        {/* Left Column: Commodity Selector */}
         <div>
-          <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#374151' }}>
-            Data Status
-          </h3>
-          
-          {/* Commodity Status Cards */}
           <div style={{
-            display: 'grid',
-            gap: '16px',
+            padding: '20px',
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb',
             marginBottom: '24px'
           }}>
-            {CHART_COMMODITIES.map(commodity => {
-              const config = COMMODITY_CONFIG[commodity];
-              const data = commodityData[commodity];
-              const comparisonData = monthlyComparisonData[commodity] || [];
-              const excelMonths = comparisonData.filter(item => item.excelPrice != null);
-              const apiMonths = comparisonData.filter(item => item.apiPrice != null);
-              const hasExcelData = excelMonths.length > 0;
-              const hasApiData = apiMonths.length > 0;
-              const apiCoverage = hasExcelData ? Math.round((apiMonths.length / excelMonths.length) * 100) : 0;
-              const apiPrices = apiMonths.map(item => item.apiPrice);
-              const uniquePrices = [...new Set(apiPrices.map(p => p?.toFixed(2)))];
-              const hasVariation = uniquePrices.length > 1;
-              const targetCurrency = currencyMode === 'original' 
-                ? COMMODITY_CURRENCIES[commodity] 
-                : 'NGN';
-              
-              return (
-                <div 
-                  key={commodity}
-                  style={{
-                    padding: '16px',
-                    backgroundColor: commodity === selectedCommodity ? '#eff6ff' : 'white',
-                    borderRadius: '12px',
-                    border: `2px solid ${commodity === selectedCommodity ? '#3B82F6' : '#e5e7eb'}`,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onClick={() => setSelectedCommodity(commodity)}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '18px' }}>{config.icon}</span>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '14px', color: '#374151' }}>{config.name}</div>
-                        <div style={{ fontSize: '11px', color: '#6b7280' }}>{targetCurrency}/kg</div>
-                      </div>
-                    </div>
-                    {commodity === selectedCommodity && (
-                      <span style={{
-                        padding: '2px 6px',
-                        backgroundColor: '#3B82F6',
-                        color: 'white',
-                        borderRadius: '4px',
-                        fontSize: '10px',
-                        fontWeight: 'bold'
-                      }}>
-                        SELECTED
-                      </span>
-                    )}
-                  </div>
-                  
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '12px',
-                    fontSize: '12px'
-                  }}>
-                    <div>
-                      <div style={{ color: '#6b7280', marginBottom: '2px' }}>Our Data</div>
-                      <div style={{ 
-                        fontWeight: '600', 
-                        color: hasExcelData ? '#3B82F6' : '#9ca3af',
+            <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', color: '#374151' }}>
+              Commodities
+            </h3>
+            
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              {CHART_COMMODITIES.map(commodity => {
+                const config = COMMODITY_CONFIG[commodity];
+                const isSelected = selectedCommodity === commodity;
+                const livePrice = livePrices[commodity];
+                const unit = COMMODITY_UNITS[commodity].chart;
+                
+                return (
+                  <div
+                    key={commodity}
+                    onClick={() => setSelectedCommodity(commodity)}
+                    style={{
+                      padding: '16px',
+                      backgroundColor: isSelected ? '#eff6ff' : '#f8fafc',
+                      borderRadius: '10px',
+                      border: `2px solid ${isSelected ? '#3B82F6' : '#e2e8f0'}`,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginBottom: '12px'
+                    }}>
+                      <div style={{
+                        width: '40px',
+                        height: '40px',
+                        backgroundColor: isSelected ? config.excelColor : '#E2E8F0',
+                        borderRadius: '10px',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        justifyContent: 'center',
+                        fontSize: '18px'
                       }}>
-                        <span>{hasExcelData ? '✓' : '✗'}</span>
-                        <span>{excelMonths.length} months</span>
+                        {config.icon}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{
+                          fontWeight: '600',
+                          color: isSelected ? '#1E293B' : '#475569',
+                          fontSize: '15px'
+                        }}>
+                          {config.name}
+                        </div>
+                        <div style={{
+                          fontSize: '12px',
+                          color: '#94A3B8'
+                        }}>
+                          {config.category} • {unit}
+                        </div>
                       </div>
                     </div>
                     
-                    <div>
-                      <div style={{ color: '#6b7280', marginBottom: '2px' }}>Market Data</div>
-                      <div style={{ 
-                        fontWeight: '600', 
-                        color: hasApiData ? 
-                          (hasVariation ? '#10B981' : '#f59e0b') : '#9ca3af',
+                    {livePrice && livePrice.current && (
+                      <div style={{
                         display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
-                        gap: '4px'
+                        paddingTop: '12px',
+                        borderTop: '1px solid #E2E8F0'
                       }}>
-                        <span>{hasApiData ? (hasVariation ? '✓' : '⚠️') : '✗'}</span>
-                        <span>{apiMonths.length} months</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {hasExcelData && (
-                    <div style={{ 
-                      marginTop: '12px',
-                      paddingTop: '8px',
-                      borderTop: '1px solid #e5e7eb'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '11px', color: '#6b7280' }}>API Coverage:</span>
-                        <span style={{ 
-                          fontSize: '11px', 
-                          fontWeight: 'bold',
-                          color: apiCoverage >= 80 ? '#059669' : apiCoverage >= 50 ? '#d97706' : '#dc2626'
-                        }}>
-                          {apiCoverage}%
-                        </span>
-                      </div>
-                      <div style={{ 
-                        height: '4px',
-                        backgroundColor: '#e5e7eb',
-                        borderRadius: '2px',
-                        overflow: 'hidden',
-                        marginBottom: '4px'
-                      }}>
-                        <div 
-                          style={{
-                            height: '100%',
-                            width: `${apiCoverage}%`,
-                            backgroundColor: apiCoverage >= 80 ? '#10B981' : apiCoverage >= 50 ? '#f59e0b' : '#ef4444',
-                            borderRadius: '2px'
-                          }}
-                        />
-                      </div>
-                      {hasApiData && !hasVariation && (
-                        <div style={{ 
-                          fontSize: '10px',
-                          color: '#92400e',
-                          backgroundColor: '#fef3c7',
-                          padding: '2px 4px',
-                          borderRadius: '3px',
-                          textAlign: 'center',
-                          marginTop: '4px'
-                        }}>
-                          ⚠️ Constant API prices 
+                        <div>
+                          <div style={{
+                            fontSize: '20px',
+                            fontWeight: '700',
+                            color: '#1E293B'
+                          }}>
+                            {livePrice.current.toFixed(decimalsByCommodity[commodity])}
+                          </div>
+                          <div style={{
+                            fontSize: '11px',
+                            color: '#94A3B8'
+                          }}>
+                            {unit}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {hasExcelData && commodity === 'aluminum' && (
-                    <div style={{ 
-                      marginTop: '12px',
-                      paddingTop: '8px',
-                      borderTop: '1px solid #e5e7eb',
-                      fontSize: '11px',
-                      color: '#6b7280'
-                    }}>
-                      <div>Negotiated: {NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE} USD/tonne</div>
-                      <div>~{(NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG).toFixed(2)} USD/kg</div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                        {livePrice.percentages?.day && (
+                          <div style={{
+                            padding: '4px 10px',
+                            backgroundColor: livePrice.percentages.day >= 0 ? '#d1fae5' : '#fee2e2',
+                            color: livePrice.percentages.day >= 0 ? '#059669' : '#dc2626',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            fontWeight: '600'
+                          }}>
+                            {livePrice.percentages.day >= 0 ? '▲' : '▼'} {Math.abs(livePrice.percentages.day).toFixed(1)}%
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-
-          {/* Data Processing Info */}
+          
+          {/* Unit Legend */}
           <div style={{
             padding: '20px',
-            backgroundColor: '#f0f9ff',
+            backgroundColor: 'white',
             borderRadius: '12px',
-            border: '2px solid #bae6fd'
+            border: '1px solid #e5e7eb'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <span style={{ fontSize: '20px' }}>📊</span>
-              <span style={{ fontWeight: 600, fontSize: '16px', color: '#0369a1' }}>Details</span>
-            </div>
-            <div style={{
-              display: 'grid',
-              gap: '12px',
-              fontSize: '13px'
+            <h3 style={{
+              margin: '0 0 16px 0',
+              fontSize: '16px',
+              fontWeight: '600',
+              color: '#1E293B'
             }}>
-              <div>
-                <div style={{ color: '#3B82F6', fontWeight: 600, marginBottom: '4px' }}>Blue Line (Our Price)</div>
-                <div style={{ color: '#374151' }}>
-                  {selectedCommodity === 'aluminum' 
-                    ? 'Negotiated raw material price: 2400 USD/tonne' 
-                    : 'Excel Purchase Price'}
-                </div>
-              </div>
-              <div>
-                <div style={{ color: '#10B981', fontWeight: 600, marginBottom: '4px' }}>Green Line (Market Price)</div>
-                <div style={{ color: '#374151' }}>
-                  DDFPlus API prices converted to {currencyMode === 'original' ? 'document currency' : 'NGN'}
-                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                    {selectedCommodity === 'wheat' ? 'ZW*1: CBOT Wheat Futures' : 
-                     selectedCommodity === 'milling_wheat' ? 'ML*1: Milling Wheat Futures' : 
-                     'Real-time commodity data'}
+              Unit Legend
+            </h3>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              {Object.entries(COMMODITY_UNITS).map(([commodity, units]) => (
+                <div key={commodity} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingBottom: '12px',
+                  borderBottom: '1px solid #F1F5F9'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{
+                      width: '12px',
+                      height: '12px',
+                      borderRadius: '3px',
+                      backgroundColor: COMMODITY_CONFIG[commodity]?.excelColor || '#94A3B8'
+                    }}></div>
+                    <span style={{ fontSize: '13px', color: '#475569' }}>
+                      {COMMODITY_CONFIG[commodity]?.name}
+                    </span>
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#64748B',
+                    backgroundColor: '#F8FAFC',
+                    padding: '4px 8px',
+                    borderRadius: '6px'
+                  }}>
+                    {units.chart}
                   </div>
                 </div>
-              </div>
-            </div>
-            <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '12px' }}>
-              Currency Mode: {currencyMode === 'original' 
-                ? 'Showing in original purchase currency for each commodity' 
-                : 'All prices converted to NGN'}
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Right Column: Monthly Comparison Chart */}
+        {/* Right Column: Chart */}
         <div>
           <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '20px'
-          }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#374151' }}>
-                {COMMODITY_CONFIG[selectedCommodity]?.name} - Monthly Price Comparison
-              </h3>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                {selectedCommodity === 'aluminum' 
-                  ? `Negotiated raw material price vs Real market prices (2020-2025) in ${currencyMode === 'original' ? 'USD' : 'NGN'}`
-                  : `Our purchase prices vs Real market prices (2020-2025) in ${currencyMode === 'original' ? COMMODITY_CURRENCIES[selectedCommodity] : 'NGN'}`}
-              </div>
-            </div>
-            <div style={{ 
-              display: 'flex',
-              gap: '8px'
-            }}>
-              <div style={{ 
-                padding: '6px 12px',
-                backgroundColor: '#f3f4f6',
-                borderRadius: '6px',
-                fontSize: '12px',
-                color: '#6b7280',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                <div style={{ width: '10px', height: '3px', backgroundColor: COMMODITY_CONFIG[selectedCommodity]?.excelColor }}></div>
-                <span>Our Price: {monthlyComparisonData[selectedCommodity]?.filter(item => item.excelPrice != null).length || 0} months</span>
-              </div>
-              <div style={{ 
-                padding: '6px 12px',
-                backgroundColor: '#f3f4f6',
-                borderRadius: '6px',
-                fontSize: '12px',
-                color: '#6b7280',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                <div style={{ width: '10px', height: '3px', backgroundColor: '#10B981' }}></div>
-                <span>Market: {monthlyComparisonData[selectedCommodity]?.filter(item => item.apiPrice != null).length || 0} months</span>
-              </div>
-            </div>
-          </div>
-          
-          <div style={{ height: '400px' }}>
-            {prepareChartData().length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={prepareChartData()}
-                  margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis 
-                    dataKey="month"
-                    tick={{ fontSize: 12 }}
-                    tickMargin={10}
-                    angle={-45}
-                    textAnchor="end"
-                    height={60}
-                    domain={['dataMin', 'dataMax']}
-                  />
-                  <YAxis 
-                    tickFormatter={value => `${value.toFixed(decimalsByCommodity[selectedCommodity])}`}
-                    tick={{ fontSize: 12 }}
-                    label={{ 
-                      value: currencyMode === 'original' 
-                        ? `${COMMODITY_CURRENCIES[selectedCommodity]}/kg`
-                        : 'NGN/kg',
-                      angle: -90,
-                      position: 'insideLeft',
-                      offset: 10,
-                      style: { fontSize: 12 }
-                    }}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="excelPrice"
-                    name={selectedCommodity === 'aluminum' ? 'Negotiated Price' : 'Our Purchase Price'}
-                    stroke={COMMODITY_CONFIG[selectedCommodity]?.excelColor}
-                    strokeWidth={3}
-                    dot={{ r: 4, fill: COMMODITY_CONFIG[selectedCommodity]?.excelColor }}
-                    activeDot={{ r: 6, fill: COMMODITY_CONFIG[selectedCommodity]?.excelColor }}
-                    connectNulls={true}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="apiPrice"
-                    name="Market Price (Real API)"
-                    stroke={COMMODITY_CONFIG[selectedCommodity]?.apiColor}
-                    strokeWidth={3}
-                    dot={{ r: 4, fill: COMMODITY_CONFIG[selectedCommodity]?.apiColor }}
-                    activeDot={{ r: 6, fill: COMMODITY_CONFIG[selectedCommodity]?.apiColor }}
-                    connectNulls={false}
-                    strokeDasharray={prepareChartData().some(d => d.apiPrice == null) ? "5 5" : "0"}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div style={{
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#f9fafb',
-                borderRadius: '8px',
-                border: '1px dashed #e5e7eb'
-              }}>
-                <div style={{ textAlign: 'center', color: '#6b7280' }}>
-                  <div style={{ fontSize: '16px', marginBottom: '8px' }}>No monthly data available</div>
-                  <div style={{ fontSize: '14px' }}>No recent data found for this commodity (2020-2025)</div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* LIVE PRICES TABLE - Updated for currency mode */}
-          <div style={{
-            marginTop: '24px',
-            padding: '16px',
-            backgroundColor: '#f8fafc',
+            padding: '24px',
+            backgroundColor: 'white',
             borderRadius: '12px',
-            border: '2px solid #e2e8f0'
+            border: '1px solid #e5e7eb',
+            marginBottom: '24px'
           }}>
             <div style={{ 
               display: 'flex', 
+              justifyContent: 'space-between',
               alignItems: 'center',
-              gap: '12px',
-              marginBottom: '16px'
+              marginBottom: '20px'
             }}>
-              <span style={{ fontSize: '20px' }}>📈</span>
               <div>
-                <div style={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
-                  Live Commodity Prices
+                <h3 style={{ margin: 0, fontSize: '20px', color: '#374151' }}>
+                  {selectedConfig.name} - Price Analysis
+                </h3>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                  Purchase vs Market Prices • Units: {unit} • {currencyMode === 'original' ? 'Document Currency' : 'NGN'}
                 </div>
-                <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                  Real-time market prices from DDFPlus API in {currencyMode === 'original' ? 'document currency' : 'NGN'}/kg
-                  <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
-                    Refreshing every 5 minutes • Currency Mode: {currencyMode.toUpperCase()}
-                  </div>
+              </div>
+              <div style={{ 
+                display: 'flex',
+                gap: '12px'
+              }}>
+                <div style={{ 
+                  padding: '6px 12px',
+                  backgroundColor: '#f3f4f6',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <div style={{ width: '10px', height: '3px', backgroundColor: selectedConfig.excelColor }}></div>
+                  <span>Purchase Price</span>
+                </div>
+                <div style={{ 
+                  padding: '6px 12px',
+                  backgroundColor: '#f3f4f6',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  color: '#6b7280',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <div style={{ width: '10px', height: '3px', backgroundColor: selectedConfig.apiColor }}></div>
+                  <span>Market Price</span>
                 </div>
               </div>
             </div>
+            
+            <div style={{ height: '400px' }}>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis 
+                      dataKey="month"
+                      tick={{ fontSize: 12 }}
+                      tickMargin={10}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                      domain={['dataMin', 'dataMax']}
+                    />
+                    <YAxis 
+                      tickFormatter={value => `${value.toFixed(decimalsByCommodity[selectedCommodity])}`}
+                      tick={{ fontSize: 12 }}
+                      label={{ 
+                        value: unit,
+                        angle: -90,
+                        position: 'insideLeft',
+                        offset: 10,
+                        style: { fontSize: 12 }
+                      }}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="excelPrice"
+                      name="Purchase Price"
+                      stroke={selectedConfig.excelColor}
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: selectedConfig.excelColor }}
+                      activeDot={{ r: 6, fill: selectedConfig.excelColor }}
+                      connectNulls={true}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="apiPrice"
+                      name="Market Price (API)"
+                      stroke={selectedConfig.apiColor}
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: selectedConfig.apiColor }}
+                      activeDot={{ r: 6, fill: selectedConfig.apiColor }}
+                      connectNulls={false}
+                      strokeDasharray={chartData.some(d => d.apiPrice == null) ? "5 5" : "0"}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#f9fafb',
+                  borderRadius: '8px',
+                  border: '1px dashed #e5e7eb'
+                }}>
+                  <div style={{ textAlign: 'center', color: '#6b7280' }}>
+                    <div style={{ fontSize: '16px', marginBottom: '8px' }}>No data available</div>
+                    <div style={{ fontSize: '14px' }}>No recent data found for {selectedConfig.name}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Live Prices Table */}
+          <div style={{
+            padding: '24px',
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            border: '1px solid #e5e7eb'
+          }}>
+            <h3 style={{ 
+              margin: '0 0 20px 0',
+              fontSize: '20px',
+              fontWeight: '700',
+              color: '#1E293B'
+            }}>
+              Live Market Prices
+            </h3>
             
             {loadingLivePrices ? (
               <div style={{
@@ -1854,203 +1723,99 @@ const CommodityDashboard = () => {
                   <thead>
                     <tr style={{ backgroundColor: '#f1f5f9' }}>
                       <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Commodity</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Today</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Yesterday</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Day %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week Ago</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month Ago</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Year Ago</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Year %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Currency</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Current Price</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>24h Change</th>
+                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Unit</th>
                       <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {CHART_COMMODITIES.map((commodity, index) => {
                       const config = COMMODITY_CONFIG[commodity];
-                      const liveData = livePrices[commodity];
+                      const livePrice = livePrices[commodity];
                       const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
                       
-                      if (!liveData) return null;
+                      if (!livePrice) return null;
                       
-                      const targetCurrency = currencyMode === 'original' 
-                        ? COMMODITY_CURRENCIES[commodity] 
-                        : 'NGN';
-                      const dec = decimalsByCommodity[commodity] || 2;
-                      const hasData = liveData.current !== null;
+                      const hasData = livePrice.current !== null;
                       const statusColor = hasData ? '#059669' : '#dc2626';
                       const statusText = hasData ? 'Live' : 'No Data';
                       
                       return (
-                        <tr key={commodity} style={{ backgroundColor: rowBg }}>
+                        <tr 
+                          key={commodity} 
+                          style={{ 
+                            backgroundColor: rowBg,
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => setSelectedCommodity(commodity)}
+                        >
                           <td style={{ 
                             padding: '12px', 
                             borderBottom: '1px solid #e2e8f0',
                             fontWeight: '600'
                           }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '16px' }}>{config.icon}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{
+                                width: '36px',
+                                height: '36px',
+                                backgroundColor: config.excelColor + '20',
+                                borderRadius: '8px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '16px'
+                              }}>
+                                {config.icon}
+                              </div>
                               <div>
                                 <div>{config.name}</div>
-                                <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                                <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>
                                   {config.category} • {COMMODITY_SYMBOLS[commodity]}
                                 </div>
                               </div>
                             </div>
                           </td>
                           
-                          {/* Today */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
                             borderBottom: '1px solid #e2e8f0',
                             fontWeight: '700',
-                            color: hasData ? '#374151' : '#9ca3af'
+                            color: hasData ? '#1E293B' : '#9ca3af'
                           }}>
-                            {hasData ? liveData.current?.toFixed(dec) : '—'}
+                            {hasData ? `${livePrice.current.toFixed(decimalsByCommodity[commodity])}` : '—'}
                           </td>
                           
-                          {/* Yesterday */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            color: hasData ? '#6b7280' : '#9ca3af'
-                          }}>
-                            {hasData ? (liveData.previous?.toFixed(dec) || '—') : '—'}
-                          </td>
-                          
-                          {/* Day % */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
                             borderBottom: '1px solid #e2e8f0'
                           }}>
-                            {hasData && liveData.percentages?.day !== null ? (
+                            {hasData && livePrice.percentages?.day !== null ? (
                               <span style={{
                                 fontWeight: '600',
-                                color: liveData.percentages.day >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.day >= 0 ? '#d1fae5' : '#fee2e2',
+                                color: livePrice.percentages.day >= 0 ? '#059669' : '#dc2626',
+                                backgroundColor: livePrice.percentages.day >= 0 ? '#d1fae5' : '#fee2e2',
                                 padding: '4px 8px',
                                 borderRadius: '4px',
                                 fontSize: '12px'
                               }}>
-                                {liveData.percentages.day >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.day).toFixed(2)}%
+                                {livePrice.percentages.day >= 0 ? '▲' : '▼'} {Math.abs(livePrice.percentages.day).toFixed(2)}%
                               </span>
                             ) : '—'}
                           </td>
                           
-                          {/* Week Ago */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
                             borderBottom: '1px solid #e2e8f0',
-                            color: hasData && liveData.weekAgo ? '#6b7280' : '#9ca3af'
+                            color: '#64748B',
+                            fontSize: '13px'
                           }}>
-                            {hasData && liveData.weekAgo ? liveData.weekAgo.toFixed(dec) : '—'}
+                            {livePrice?.unit || COMMODITY_UNITS[commodity].chart}
                           </td>
                           
-                          {/* Week % */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasData && liveData.percentages?.week !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.week >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.week >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.week >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.week).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          {/* Month Ago */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            color: hasData && liveData.monthAgo ? '#6b7280' : '#9ca3af'
-                          }}>
-                            {hasData && liveData.monthAgo ? liveData.monthAgo.toFixed(dec) : '—'}
-                          </td>
-                          
-                          {/* Month % */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasData && liveData.percentages?.month !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.month >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.month >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.month >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.month).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          {/* Year Ago */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            color: hasData && liveData.yearAgo ? '#6b7280' : '#9ca3af'
-                          }}>
-                            {hasData && liveData.yearAgo ? liveData.yearAgo.toFixed(dec) : '—'}
-                          </td>
-                          
-                          {/* Year % */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasData && liveData.percentages?.year !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.year >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.year >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.year >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.year).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          {/* Currency */}
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            <span style={{
-                              fontWeight: '600',
-                              color: '#3B82F6',
-                              backgroundColor: '#dbeafe',
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              fontSize: '11px'
-                            }}>
-                              {targetCurrency}
-                            </span>
-                          </td>
-                          
-                          {/* Status */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
@@ -2073,43 +1838,34 @@ const CommodityDashboard = () => {
                   </tbody>
                 </table>
                 
-                {/* Live Prices Footer */}
                 <div style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginTop: '16px',
-                  paddingTop: '12px',
-                  borderTop: '1px solid #e2e8f0',
-                  fontSize: '11px',
-                  color: '#6b7280'
+                  marginTop: '20px',
+                  paddingTop: '20px',
+                  borderTop: '1px solid #E2E8F0',
+                  fontSize: '13px',
+                  color: '#94A3B8'
                 }}>
                   <div>
-                    <span style={{ fontWeight: '600' }}>Last Updated:</span> {livePrices.wheat?.lastUpdated || 'N/A'}
-                    <span style={{ marginLeft: '12px', fontWeight: '600' }}>Currency Mode:</span> {currencyMode.toUpperCase()}
-                  </div>
-                  <div style={{ display: 'flex', gap: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <div style={{ width: '8px', height: '8px', backgroundColor: '#059669', borderRadius: '50%' }}></div>
-                      <span>Live Data Available</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <div style={{ width: '8px', height: '8px', backgroundColor: '#dc2626', borderRadius: '50%' }}></div>
-                      <span>No Data</span>
-                    </div>
+                    Last updated: {livePrices.wheat?.lastUpdated || 'N/A'}
+                    <span style={{ marginLeft: '16px' }}>
+                      Currency: {currencyMode === 'original' ? 'Document' : 'NGN'}
+                    </span>
                   </div>
                   <button
                     onClick={() => {
                       setLoadingLivePrices(true);
-                      // Refresh live prices function would be called here
+                      // Refresh function would be called here
                     }}
                     style={{
-                      padding: '4px 8px',
+                      padding: '6px 12px',
                       backgroundColor: '#3B82F6',
                       color: 'white',
                       border: 'none',
-                      borderRadius: '4px',
-                      fontSize: '11px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
                       cursor: 'pointer'
                     }}
                   >
@@ -2122,43 +1878,39 @@ const CommodityDashboard = () => {
         </div>
       </div>
 
-      {/* Footer with data summary */}
+      {/* Footer */}
       <div style={{
-        marginTop: '32px',
         padding: '20px',
         backgroundColor: '#f8fafc',
         borderRadius: '12px',
-        border: '2px solid #e2e8f0'
+        border: '1px solid #e2e8f0'
       }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
           <div>
             <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Data Sources</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Real-time DDFPlus Commodity API<br/>
+              • DDFPlus Commodity API (Real-time)<br/>
               • Excel Purchase Records<br/>
-              • FX Rates: USD/NGN 1460, EUR/NGN 1600<br/>
-              • Dates: 2020-2025 only
+              • Historical FX Rates (Dynamic)<br/>
+              • Date Range: 2020-2025
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Currency Information</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Unit Configuration</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • <strong>Document Currency Mode:</strong><br/>
-              Wheat: USD/kg<br/>
-              Palm Oil: GHS/kg<br/>
-              Crude Palm: USD/kg<br/>
-              Sugar: NGN/kg<br/>
-              Aluminum: USD/kg
+              • Palm Oil: USD/tonne<br/>
+              • Brent Crude: USD/kg<br/>
+              • Aluminum: USD/tonne<br/>
+              • Sugar: NGN/kg
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Refresh Schedule</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>System Info</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Live prices: Every 5 minutes<br/>
-              • Historical data: Every 10 minutes<br/>
-              • Last API check: {new Date().toLocaleTimeString()}<br/>
-              • Mode: Real API Only<br/>
-              • Currency: {currencyMode.toUpperCase()}
+              • Refresh: Live (5 min)<br/>
+              • Mode: Real API + Historical FX<br/>
+              • Version: 2.0.0<br/>
+              • Updated: {new Date().toLocaleDateString()}
             </div>
           </div>
         </div>

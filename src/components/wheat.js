@@ -1,4 +1,4 @@
-// src/data/commodityData.js
+// src/data/commodityData.js - UPDATED WITH CORRECT PALM OIL DATA
 export const COMPLETE_WHEAT_DATA = [
   { poDate: '2025-06-17', rate: 0.384, currency: 'USD' },
   { poDate: '2025-06-21', rate: 0.395, currency: 'USD' },
@@ -73,53 +73,57 @@ export const COMPLETE_WHEAT_DATA = [
   { poDate: '2025-07-01', rate: 9.430, currency: 'GHS' },
   { poDate: '2025-06-06', rate: 9.430, currency: 'GHS' },
   { poDate: '2025-06-13', rate: 9.630, currency: 'GHS' }
-  // ...add remaining wheat rows if any
 ];
 
+// UPDATED: This is the correct palm oil data from your provided table
 export const COMPLETE_PALM_OIL_DATA = [
-  { poDate: '2025-11-20', rate: 14.016, currency: 'GHS' },
-  { poDate: '2025-06-03', rate: 15.150, currency: 'GHS' },
-  { poDate: '2025-06-11', rate: 15.150, currency: 'GHS' },
-  { poDate: '2025-06-19', rate: 15.230, currency: 'GHS' },
-  { poDate: '2025-07-04', rate: 15.230, currency: 'GHS' },
-  { poDate: '2025-06-26', rate: 15.300, currency: 'GHS' },
-  { poDate: '2025-07-09', rate: 15.440, currency: 'GHS' },
-  { poDate: '2025-07-14', rate: 15.440, currency: 'GHS' },
-  { poDate: '2025-07-17', rate: 15.440, currency: 'GHS' },
-  { poDate: '2025-07-17', rate: 15.440, currency: 'GHS' },
-  { poDate: '2025-07-31', rate: 15.440, currency: 'GHS' },
-  { poDate: '2025-05-27', rate: 15.520, currency: 'GHS' },
-  { poDate: '2025-08-06', rate: 15.600, currency: 'GHS' },
-  { poDate: '2025-08-13', rate: 16.550, currency: 'GHS' },
-  { poDate: '2025-08-18', rate: 16.590, currency: 'GHS' },
-  { poDate: '2025-08-28', rate: 16.930, currency: 'GHS' },
-  { poDate: '2025-10-27', rate: 16.956, currency: 'GHS' },
-  { poDate: '2025-11-05', rate: 17.144, currency: 'GHS' },
-  { poDate: '2025-09-03', rate: 18.000, currency: 'GHS' },
-  { poDate: '2025-01-21', rate: 18.750, currency: 'GHS' },
-  { poDate: '2025-10-14', rate: 18.840, currency: 'GHS' },
-  { poDate: '2025-05-12', rate: 19.290, currency: 'GHS' },
-  { poDate: '2025-09-24', rate: 19.550, currency: 'GHS' },
-  { poDate: '2025-10-01', rate: 19.910, currency: 'GHS' },
-  { poDate: '2025-05-07', rate: 20.838, currency: 'GHS' },
-  { poDate: '2025-01-02', rate: 23.020, currency: 'GHS' },
-  { poDate: '2025-04-30', rate: 23.680, currency: 'GHS' },
-  { poDate: '2025-05-08', rate: 23.680, currency: 'GHS' },
-  { poDate: '2025-04-14', rate: 23.840, currency: 'GHS' },
-  { poDate: '2025-04-11', rate: 23.840, currency: 'GHS' },
-  { poDate: '2025-02-07', rate: 24.270, currency: 'GHS' },
-  { poDate: '2025-02-17', rate: 24.410, currency: 'GHS' },
-  { poDate: '2025-02-25', rate: 24.480, currency: 'GHS' },
-  { poDate: '2025-03-10', rate: 24.480, currency: 'GHS' },
-  { poDate: '2025-03-13', rate: 24.720, currency: 'GHS' },
-  { poDate: '2025-03-24', rate: 24.730, currency: 'GHS' },
-  { poDate: '2025-01-10', rate: 26.150, currency: 'GHS' },
-  { poDate: '2025-01-21', rate: 26.610, currency: 'GHS' },
-  { poDate: '2025-01-27', rate: 26.890, currency: 'GHS' },
-  { poDate: '2025-01-23', rate: 34.540, currency: 'GHS' }
-  // ...add remaining palm rows if any
+  { poDate: '2024-10-14', rate: 7.333333333, currency: 'USD', uom: 'TONS', quantity: 150, fob: 1100, costPerUnit: 7.333333333 },
+  { poDate: '2024-10-14', rate: 7.333333333, currency: 'USD', uom: 'TONS', quantity: 150, fob: 1100, costPerUnit: 7.333333333 },
+  { poDate: '2024-10-21', rate: 3.633333333, currency: 'USD', uom: 'TONS', quantity: 300, fob: 1090, costPerUnit: 3.633333333 },
+  { poDate: '2024-10-21', rate: 3.633333333, currency: 'USD', uom: 'TONS', quantity: 300, fob: 1090, costPerUnit: 3.633333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2024-12-11', rate: 0.873333333, currency: 'USD', uom: 'TONS', quantity: 1500, fob: 1310, costPerUnit: 0.873333333 },
+  { poDate: '2025-01-03', rate: 4.333333333, currency: 'USD', uom: 'TONS', quantity: 300, fob: 1300, costPerUnit: 4.333333333 },
+  { poDate: '2025-01-03', rate: 4.333333333, currency: 'USD', uom: 'TONS', quantity: 300, fob: 1300, costPerUnit: 4.333333333 },
+  { poDate: '2025-01-03', rate: 4.333333333, currency: 'USD', uom: 'TONS', quantity: 300, fob: 1300, costPerUnit: 4.333333333 },
+  { poDate: '2025-01-03', rate: 4.333333333, currency: 'USD', uom: 'TONS', quantity: 300, fob: 1300, costPerUnit: 4.333333333 },
+  { poDate: '2025-01-03', rate: 4.333333333, currency: 'USD', uom: 'TONS', quantity: 300, fob: 1300, costPerUnit: 4.333333333 },
+  { poDate: '2025-01-17', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-01-17', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-01-20', rate: 13, currency: 'USD', uom: 'TONS', quantity: 100, fob: 1300, costPerUnit: 13 },
+  { poDate: '2025-01-30', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-01-30', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-01-30', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-01-30', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-01-31', rate: 0.6475, currency: 'USD', uom: 'TONS', quantity: 2000, fob: 1295, costPerUnit: 0.6475 },
+  { poDate: '2025-02-12', rate: 2.52, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1260, costPerUnit: 2.52 },
+  { poDate: '2025-02-12', rate: 2.52, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1260, costPerUnit: 2.52 },
+  { poDate: '2025-02-12', rate: 2.52, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1260, costPerUnit: 2.52 },
+  { poDate: '2025-03-05', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-03-05', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-03-05', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-03-05', rate: 2.58, currency: 'USD', uom: 'TONS', quantity: 500, fob: 1290, costPerUnit: 2.58 },
+  { poDate: '2025-10-13', rate: 1.22, currency: 'USD', uom: 'TONS', quantity: 1000, fob: 1220, costPerUnit: 1.22 },
+  { poDate: '2025-10-13', rate: 1.22, currency: 'USD', uom: 'TONS', quantity: 1000, fob: 1220, costPerUnit: 1.22 },
+  { poDate: '2025-10-13', rate: 1.22, currency: 'USD', uom: 'TONS', quantity: 1000, fob: 1220, costPerUnit: 1.22 },
+  { poDate: '2025-10-13', rate: 1.22, currency: 'USD', uom: 'TONS', quantity: 1000, fob: 1220, costPerUnit: 1.22 },
+  { poDate: '2025-10-13', rate: 1.22, currency: 'USD', uom: 'TONS', quantity: 1000, fob: 1220, costPerUnit: 1.22 },
 ];
-
 
 export const SUGAR_MONTH_COST = [
   { month: 'Dec-25', cost: 1283.72 },
@@ -150,48 +154,21 @@ export const SUGAR_MONTH_COST = [
   { month: 'Oct-24', cost: 1460.46 },
 ];
 
-// src/data/commodityData.js - UPDATED VERSION
+// Keep your existing COMPLETE_CRUDE_PALM_OIL_DATA for Brent Crude comparison
 export const COMPLETE_CRUDE_PALM_OIL_DATA = [
-  // October 2024 - Average: 1.53 USD/kg
   { poDate: '2024-10-01', rate: 1.53, currency: 'USD', orderQuantity: 130000.000, netOrderValue: 199420.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // November 2024 - Average: 1.44 USD/kg
   { poDate: '2024-11-01', rate: 1.44, currency: 'USD', orderQuantity: 520000.000, netOrderValue: 748800.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // December 2024 - Average: 1.44 USD/kg  
   { poDate: '2024-12-01', rate: 1.44, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 374400.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // January 2025 - Average: 1.42 USD/kg
   { poDate: '2025-01-01', rate: 1.42, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 369200.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // February 2025 - Average: 1.38 USD/kg
   { poDate: '2025-02-01', rate: 1.38, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 358800.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // March 2025 - Average: 1.36 USD/kg
   { poDate: '2025-03-01', rate: 1.36, currency: 'USD', orderQuantity: 208000.000, netOrderValue: 282880.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // April 2025 - Average: 1.36 USD/kg
   { poDate: '2025-04-01', rate: 1.36, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 353600.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // May 2025 - Average: 1.27 USD/kg
   { poDate: '2025-05-01', rate: 1.27, currency: 'USD', orderQuantity: 208000.000, netOrderValue: 264160.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // July 2025 - Average: 1.41 USD/kg
   { poDate: '2025-07-01', rate: 1.41, currency: 'USD', orderQuantity: 260000.000, netOrderValue: 366600.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // August 2025 - Average: 1.39 USD/kg
   { poDate: '2025-08-01', rate: 1.39, currency: 'USD', orderQuantity: 104000.000, netOrderValue: 144560.00, material: '30000639', shortText: 'PP_RESIN_FC9413P', unit: 'kg' },
-  
-  // September 2025 - Average: 1.33 USD/kg
   { poDate: '2025-09-01', rate: 1.33, currency: 'USD', orderQuantity: 442000.000, netOrderValue: 586040.00, material: '30000639_30004261', shortText: 'Mixed: PP_RESIN_FC9413P & PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' },
-  
-  // October 2025 - Average: 1.33 USD/kg
   { poDate: '2025-10-01', rate: 1.33, currency: 'USD', orderQuantity: 130000.000, netOrderValue: 172900.00, material: '30004261', shortText: 'PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' },
-  
-  // November 2025 - Average: 1.31 USD/kg
   { poDate: '2025-11-01', rate: 1.31, currency: 'USD', orderQuantity: 130000.000, netOrderValue: 170300.00, material: '30004261', shortText: 'PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' },
-  
-  // December 2025 - Average: 1.27 USD/kg
   { poDate: '2025-12-01', rate: 1.27, currency: 'USD', orderQuantity: 182000.000, netOrderValue: 231140.00, material: '30004261', shortText: 'PROPYLENE COPOLYMER FC9413 P/ FC9413 G', unit: 'kg' }
 ];
 
@@ -214,4 +191,3 @@ export const CAN_DATA = [
   { month: 'Aug-24', avgPricePerUnit: 143.34, currency: 'NGN' },
   { month: 'Jul-24', avgPricePerUnit: 146.57, currency: 'NGN' }
 ];
-
