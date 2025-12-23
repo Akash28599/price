@@ -32,7 +32,8 @@ const DEFAULT_FX_RATES = {
   USD_to_GHS: 11.48,
   MYR_to_USD: 0.21,
   USD_to_MYR: 4.76,
-  EUR_to_USD: 1.08
+  EUR_to_USD: 1.08,
+  MYR_to_NGN: 350
 };
 
 // Conversion factors
