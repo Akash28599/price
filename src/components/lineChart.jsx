@@ -190,7 +190,7 @@ function simulateLivePricesFromCSV(csvData) {
     current: latest.close,
     previous: yesterday ? yesterday.close : null,
     weekAgo: weekAgo ? weekAgo.close : null,
-    monthAgo: monthAgo ? monthAgo.close : null,
+    monthAgo: monthAgo ? weekAgo.close : null,
     yearAgo: yearAgo ? yearAgo.close : null,
     date: latest.date,
     weekAgoDate: weekAgo ? weekAgo.date : null,
@@ -526,8 +526,8 @@ function filterRecentData(data, maxYearsBack = 5) {
   });
 }
 
-// Convert API value to target currency - UPDATED with historical FX rates
-function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, monthKey = null) {
+// Convert API value to target currency - FIXED for wheat unit consistency
+function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, monthKey = null, wheatDisplayUnit = 'usdPerKg') {
   if (apiValue == null || isNaN(Number(apiValue))) return null;
   const value = Number(apiValue);
 
@@ -540,6 +540,11 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, mo
       const usdPerBushel = value / 100;
       apiPriceInOriginalCurrency = usdPerBushel;
       apiCurrency = 'USD';
+      
+      // Convert to kg if needed - FIXED: Apply conversion here for consistency
+      if (wheatDisplayUnit === 'usdPerKg') {
+        apiPriceInOriginalCurrency = usdPerBushel / BUSHEL_TO_KG_WHEAT;
+      }
       break;
 
     case 'milling_wheat':
@@ -595,8 +600,8 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, mo
   return apiPriceInOriginalCurrency;
 }
 
-// Convert Excel purchase price to target currency - UPDATED for Palm Oil
-function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency, monthKey = null) {
+// Convert Excel purchase price to target currency - FIXED for wheat unit consistency
+function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency, monthKey = null, wheatDisplayUnit = 'usdPerKg') {
   if (!excelItem) return null;
   
   let priceInOriginalCurrency;
@@ -614,6 +619,12 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency,
       } else {
         priceInOriginalCurrency = excelItem.rate;
         excelCurrency = excelItem.currency;
+      }
+      
+      // FIXED: Apply wheat unit conversion consistently
+      if (commodity === 'wheat' && wheatDisplayUnit === 'bushel') {
+        // Convert from USD/kg to USD/bushel
+        priceInOriginalCurrency = priceInOriginalCurrency * BUSHEL_TO_KG_WHEAT;
       }
       break;
       
@@ -673,11 +684,11 @@ function getExcelDateForMonth(commodity, excelItem) {
   }
 }
 
-// Process Excel data by month (average per month) - Updated with historical FX
-function processExcelDataByMonth(commodity, currencyMode) {
+// Process Excel data by month (average per month) - Updated with wheat unit fix
+function processExcelDataByMonth(commodity, currencyMode, wheatDisplayUnit = 'usdPerKg') {
   const rawData = EXCEL_DATA_SOURCES[commodity] || [];
   
-  console.log(`Processing ${commodity} data in ${currencyMode} mode:`, {
+  console.log(`Processing ${commodity} data in ${currencyMode} mode, wheat unit: ${wheatDisplayUnit}:`, {
     rawDataLength: rawData.length
   });
   
@@ -704,7 +715,7 @@ function processExcelDataByMonth(commodity, currencyMode) {
       return;
     }
     
-    const priceInTargetCurrency = convertExcelPriceToTargetCurrency(commodity, item, targetCurrency, monthKey);
+    const priceInTargetCurrency = convertExcelPriceToTargetCurrency(commodity, item, targetCurrency, monthKey, wheatDisplayUnit);
     if (priceInTargetCurrency == null) return;
     
     if (!monthlyData[monthKey]) {
@@ -732,7 +743,7 @@ function processExcelDataByMonth(commodity, currencyMode) {
   
   const filteredResult = filterRecentData(result, 5);
   
-  console.log(`${commodity} processed data in ${currencyMode}:`, {
+  console.log(`${commodity} processed data in ${currencyMode}, wheat unit ${wheatDisplayUnit}:`, {
     totalMonths: result.length,
     filteredMonths: filteredResult.length,
     targetCurrency
@@ -776,7 +787,7 @@ async function fetchDataFromCSV(commodity, startDate, endDate) {
 }
 
 // NEW: Function to fetch monthly prices from CSV if API fails
-async function fetchMonthlyPricesWithFallback(symbol, commodity, months) {
+async function fetchMonthlyPricesWithFallback(symbol, commodity, months, wheatDisplayUnit = 'usdPerKg') {
   try {
     const apiResults = await fetchMonthlyPricesWithVariation(symbol, months);
     
@@ -944,30 +955,14 @@ async function fetchMonthlyPricesWithVariation(symbol, months) {
   }
 }
 
-// Process API data by month - Updated with historical FX
+// Process API data by month - FIXED for wheat unit consistency
 function processApiDataByMonth(commodity, apiMonthlyData, currencyMode, wheatDisplayUnit = 'usdPerKg') {
   const targetCurrency = currencyMode === 'original' 
     ? COMMODITY_CURRENCIES[commodity] 
     : 'NGN';
   
   return apiMonthlyData.map(item => {
-    let apiPrice = convertApiValueToTargetCurrency(commodity, item.avgPrice, targetCurrency, item.monthKey);
-    
-    // Convert wheat from bushel to kg if needed
-    if (commodity === 'wheat') {
-      if (wheatDisplayUnit === 'bushel') {
-        // Keep in USD/bushel (apiPrice is already in USD/bushel after conversion)
-        // No conversion needed
-      } else {
-        // Convert from USD/bushel to USD/kg
-        apiPrice = apiPrice / BUSHEL_TO_KG_WHEAT;
-      }
-    }
-    
-    // For palm oil, ensure we're in USD/tonne
-    if (commodity === 'palm' && targetCurrency === 'USD') {
-      // apiPrice is already in USD/tonne
-    }
+    let apiPrice = convertApiValueToTargetCurrency(commodity, item.avgPrice, targetCurrency, item.monthKey, wheatDisplayUnit);
     
     return {
       monthKey: item.monthKey,
@@ -990,20 +985,6 @@ function combineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUni
     let excelPrice = excelMonth?.excelPrice || null;
     let apiPrice = apiMonth?.apiPrice || null;
     
-    // Adjust wheat prices based on display unit
-    if (commodity === 'wheat') {
-      if (excelPrice && wheatDisplayUnit === 'bushel') {
-        // Convert Excel price from USD/kg to USD/bushel
-        excelPrice = excelPrice * BUSHEL_TO_KG_WHEAT;
-      }
-    }
-    
-    // Adjust palm oil to USD/tonne
-    if (commodity === 'palm') {
-      // excelPrice should already be in USD/tonne
-      // apiPrice should already be in USD/tonne
-    }
-    
     return {
       monthKey,
       monthDisplay: getMonthDisplay(monthKey),
@@ -1015,6 +996,19 @@ function combineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUni
     };
   });
 }
+
+// FIXED: Helper function to format price based on display unit
+const formatPriceForDisplay = (price, commodity, wheatDisplayUnit, decimals) => {
+  if (price == null) return null;
+  
+  if (commodity === 'wheat' && wheatDisplayUnit === 'usdPerKg') {
+    // Convert from USD/bushel to USD/kg
+    const priceInKg = price / BUSHEL_TO_KG_WHEAT;
+    return typeof decimals === 'number' ? priceInKg.toFixed(decimals) : priceInKg;
+  }
+  
+  return typeof decimals === 'number' ? price.toFixed(decimals) : price;
+};
 
 const CommodityDashboard = () => {
   // Currency mode state
@@ -1032,12 +1026,12 @@ const CommodityDashboard = () => {
   const [dataSource, setDataSource] = useState({}); // Track data source for each commodity
   const [priceAlerts, setPriceAlerts] = useState([]); // NEW: Store price alerts
 
-  // Process Excel data by month - Updated with historical FX
+  // Process Excel data by month - Updated with wheat unit fix
   const excelMonthlyData = useMemo(() => {
-    console.log(`Processing Excel data for all commodities in ${currencyMode} mode...`);
+    console.log(`Processing Excel data for all commodities in ${currencyMode} mode, wheat unit: ${wheatDisplayUnit}...`);
     const data = {};
     Object.keys(COMMODITY_CONFIG).forEach(commodity => {
-      data[commodity] = processExcelDataByMonth(commodity, currencyMode);
+      data[commodity] = processExcelDataByMonth(commodity, currencyMode, wheatDisplayUnit);
     });
     
     // Handle aluminum data
@@ -1077,44 +1071,44 @@ const CommodityDashboard = () => {
     }
     
     return data;
-  }, [currencyMode]);
+  }, [currencyMode, wheatDisplayUnit]);
 
-  // NEW: Function to check for price alerts
+  // FIXED: Function to check for price alerts - ONLY for negative changes
   const checkPriceAlerts = (commodity, liveData) => {
     const alerts = [];
     
     if (liveData && liveData.percentages) {
-      // Check for significant daily drop (>1%)
+      // Check for significant daily DROP (>1% loss) - Only negative percentages
       if (liveData.percentages.day !== null && liveData.percentages.day < -1) {
         alerts.push({
           commodity,
           type: 'price_drop',
-          message: `Significant price drop: ${Math.abs(liveData.percentages.day).toFixed(2)}% today`,
-          severity: 'high',
+          message: `Price drop: ${Math.abs(liveData.percentages.day).toFixed(2)}% today`,
+          severity: liveData.percentages.day < -5 ? 'high' : 'medium',
           percentage: liveData.percentages.day,
           timestamp: new Date()
         });
       }
       
-      // Check for weekly drop (>3%)
+      // Check for weekly DROP (>3% loss) - Only negative percentages
       if (liveData.percentages.week !== null && liveData.percentages.week < -3) {
         alerts.push({
           commodity,
           type: 'weekly_drop',
-          message: `Weekly price decline: ${Math.abs(liveData.percentages.week).toFixed(2)}% this week`,
-          severity: 'medium',
+          message: `Weekly decline: ${Math.abs(liveData.percentages.week).toFixed(2)}% this week`,
+          severity: liveData.percentages.week < -7 ? 'high' : 'medium',
           percentage: liveData.percentages.week,
           timestamp: new Date()
         });
       }
       
-      // Check for monthly drop (>5%)
+      // Check for monthly DROP (>5% loss) - Only negative percentages
       if (liveData.percentages.month !== null && liveData.percentages.month < -5) {
         alerts.push({
           commodity,
           type: 'monthly_drop',
-          message: `Monthly price decline: ${Math.abs(liveData.percentages.month).toFixed(2)}% this month`,
-          severity: 'high',
+          message: `Monthly decline: ${Math.abs(liveData.percentages.month).toFixed(2)}% this month`,
+          severity: liveData.percentages.month < -10 ? 'high' : 'medium',
           percentage: liveData.percentages.month,
           timestamp: new Date()
         });
@@ -1124,216 +1118,210 @@ const CommodityDashboard = () => {
     return alerts;
   };
 
-  // UPDATED: Fetch live prices with CSV fallback
-  // UPDATED: Fetch live prices with CSV fallback
-useEffect(() => {
-  const fetchLivePrices = async () => {
-    setLoadingLivePrices(true);
-    setApiStatus('fetching_live');
-    
-    try {
-      const liveData = {};
-      const newAlerts = [];
+  // FIXED: Fetch live prices with correct wheat unit calculations
+  useEffect(() => {
+    const fetchLivePrices = async () => {
+      setLoadingLivePrices(true);
+      setApiStatus('fetching_live');
       
-      for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
-        console.log(`Fetching live price for ${commodity} (${symbol})...`);
+      try {
+        const liveData = {};
+        const newAlerts = [];
         
-        let priceData = null;
-        let dataSourceType = 'none';
-        
-        // First, always try to get CSV data (since API might fail)
-        const csvData = await getCSVDataForLivePrice(commodity);
-        
-        if (csvData && csvData.length > 0) {
-          // Use CSV data to simulate live prices
-          priceData = simulateLivePricesFromCSV(csvData);
-          dataSourceType = 'csv';
+        for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
+          console.log(`Fetching live price for ${commodity} (${symbol})...`);
           
-          console.log(`✅ Using CSV fallback for ${commodity}:`, {
-            current: priceData?.current,
-            latestDate: priceData?.date,
-            csvRecords: csvData.length
-          });
-        }
-        
-        // If we have no CSV data either, set null values
-        if (!priceData) {
-          console.warn(`No data available for ${commodity}`);
-          liveData[commodity] = {
-            current: null,
-            previous: null,
-            weekAgo: null,
-            monthAgo: null,
-            yearAgo: null,
-            percentages: { day: null, week: null, month: null, year: null },
-            symbol,
-            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: 'no_data',
-            source: 'none'
+          let priceData = null;
+          let dataSourceType = 'none';
+          
+          // First, always try to get CSV data (since API might fail)
+          const csvData = await getCSVDataForLivePrice(commodity);
+          
+          if (csvData && csvData.length > 0) {
+            // Use CSV data to simulate live prices
+            priceData = simulateLivePricesFromCSV(csvData);
+            dataSourceType = 'csv';
+            
+            console.log(`✅ Using CSV fallback for ${commodity}:`, {
+              current: priceData?.current,
+              latestDate: priceData?.date,
+              csvRecords: csvData.length
+            });
+          }
+          
+          // If we have no CSV data either, set null values
+          if (!priceData) {
+            console.warn(`No data available for ${commodity}`);
+            liveData[commodity] = {
+              current: null,
+              previous: null,
+              weekAgo: null,
+              monthAgo: null,
+              yearAgo: null,
+              percentages: { day: null, week: null, month: null, year: null },
+              symbol,
+              lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'no_data',
+              source: 'none'
+            };
+            continue;
+          }
+          
+          const targetCurrency = currencyMode === 'original' 
+            ? COMMODITY_CURRENCIES[commodity] 
+            : 'NGN';
+          
+          // Get current month key for FX rate
+          const currentDate = new Date();
+          const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+          
+          // FIXED: Use consistent wheat unit in conversion
+          const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey, wheatDisplayUnit);
+          const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey, wheatDisplayUnit) : null;
+          
+          // For historical prices, use appropriate month keys
+          let weekAgo = null, monthAgo = null, yearAgo = null;
+          
+          if (priceData.weekAgo && priceData.weekAgoDate) {
+            const weekMonthKey = getMonthKey(priceData.weekAgoDate);
+            weekAgo = convertApiValueToTargetCurrency(commodity, priceData.weekAgo, targetCurrency, weekMonthKey, wheatDisplayUnit);
+          }
+          
+          if (priceData.monthAgo && priceData.monthAgoDate) {
+            const monthMonthKey = getMonthKey(priceData.monthAgoDate);
+            monthAgo = convertApiValueToTargetCurrency(commodity, priceData.monthAgo, targetCurrency, monthMonthKey, wheatDisplayUnit);
+          }
+          
+          if (priceData.yearAgo && priceData.yearAgoDate) {
+            const yearMonthKey = getMonthKey(priceData.yearAgoDate);
+            yearAgo = convertApiValueToTargetCurrency(commodity, priceData.yearAgo, targetCurrency, yearMonthKey, wheatDisplayUnit);
+          }
+          
+          // Calculate percentages using consistent units
+          const percentages = {
+            day: previous ? calculatePercentageChange(current, previous) : null,
+            week: weekAgo ? calculatePercentageChange(current, weekAgo) : null,
+            month: monthAgo ? calculatePercentageChange(current, monthAgo) : null,
+            year: yearAgo ? calculatePercentageChange(current, yearAgo) : null
           };
-          continue;
-        }
-        
-        const targetCurrency = currencyMode === 'original' 
-          ? COMMODITY_CURRENCIES[commodity] 
-          : 'NGN';
-        
-        // Get current month key for FX rate
-        const currentDate = new Date();
-        const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-        
-        const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey);
-        const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey) : null;
-        
-        // For historical prices, use appropriate month keys
-        let weekAgo = null, monthAgo = null, yearAgo = null;
-        
-        if (priceData.weekAgo && priceData.weekAgoDate) {
-          const weekMonthKey = getMonthKey(priceData.weekAgoDate);
-          weekAgo = convertApiValueToTargetCurrency(commodity, priceData.weekAgo, targetCurrency, weekMonthKey);
-        }
-        
-        if (priceData.monthAgo && priceData.monthAgoDate) {
-          const monthMonthKey = getMonthKey(priceData.monthAgoDate);
-          monthAgo = convertApiValueToTargetCurrency(commodity, priceData.monthAgo, targetCurrency, monthMonthKey);
-        }
-        
-        if (priceData.yearAgo && priceData.yearAgoDate) {
-          const yearMonthKey = getMonthKey(priceData.yearAgoDate);
-          yearAgo = convertApiValueToTargetCurrency(commodity, priceData.yearAgo, targetCurrency, yearMonthKey);
-        }
-        
-        // Adjust wheat display unit
-        let displayCurrent = current;
-        if (commodity === 'wheat' && wheatDisplayUnit === 'bushel' && current) {
-          displayCurrent = current; // Already in USD/bushel
-        } else if (commodity === 'wheat' && wheatDisplayUnit === 'usdPerKg' && current) {
-          displayCurrent = current / BUSHEL_TO_KG_WHEAT;
-        }
-        
-        const percentages = {
-          day: previous ? calculatePercentageChange(displayCurrent, previous) : null,
-          week: weekAgo ? calculatePercentageChange(displayCurrent, weekAgo) : null,
-          month: monthAgo ? calculatePercentageChange(displayCurrent, monthAgo) : null,
-          year: yearAgo ? calculatePercentageChange(displayCurrent, yearAgo) : null
-        };
-        
-        liveData[commodity] = {
-          current: displayCurrent,
-          previous,
-          weekAgo,
-          monthAgo,
-          yearAgo,
-          percentages,
-          symbol,
-          lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          status: priceData.current ? 'success' : 'no_data',
-          source: dataSourceType,
-          rawData: {
+          
+          // Store raw prices for debugging
+          const rawPrices = {
             currentUSD: priceData.current,
             previousUSD: priceData.previous,
             weekAgoUSD: priceData.weekAgo,
             monthAgoUSD: priceData.monthAgo,
             yearAgoUSD: priceData.yearAgo
-          },
-          csvInfo: priceData.csvDataLength ? `${priceData.csvDataLength} records` : null,
-          latestDate: priceData.date,
-          csvFallbackInfo: dataSourceType === 'csv' ? `Using CSV: ${csvData.length} records, latest: ${priceData.date}` : null
-        };
+          };
+          
+          liveData[commodity] = {
+            current: current,
+            previous,
+            weekAgo,
+            monthAgo,
+            yearAgo,
+            percentages,
+            symbol,
+            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            status: priceData.current ? 'success' : 'no_data',
+            source: dataSourceType,
+            rawPrices,
+            csvInfo: priceData.csvDataLength ? `${priceData.csvDataLength} records` : null,
+            latestDate: priceData.date,
+            csvFallbackInfo: dataSourceType === 'csv' ? `Using CSV: ${csvData.length} records, latest: ${priceData.date}` : null,
+            // Store base USD/bushel price for wheat
+            basePriceUSDperBushel: commodity === 'wheat' && priceData.current ? priceData.current / 100 : null
+          };
+          
+          // Check for price alerts (only negative changes)
+          const commodityAlerts = checkPriceAlerts(commodity, liveData[commodity]);
+          newAlerts.push(...commodityAlerts);
+          
+          console.log(`Live price for ${commodity} in ${targetCurrency}, wheat unit ${wheatDisplayUnit}:`, {
+            current,
+            percentages,
+            source: dataSourceType,
+            baseUSDperBushel: commodity === 'wheat' ? priceData.current : null,
+            conversionFactor: commodity === 'wheat' ? BUSHEL_TO_KG_WHEAT : null
+          });
+          
+          // Small delay to prevent overwhelming
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
         
-        // Check for price alerts
-        const commodityAlerts = checkPriceAlerts(commodity, liveData[commodity]);
-        newAlerts.push(...commodityAlerts);
+        setLivePrices(liveData);
+        setApiStatus('connected');
         
-        console.log(`Live price for ${commodity} in ${targetCurrency}:`, {
-          current: displayCurrent,
-          source: dataSourceType,
-          percentages,
-          csvRecords: csvData?.length || 0
-        });
+        // Update alerts if there are new ones
+        if (newAlerts.length > 0) {
+          setPriceAlerts(prev => [...newAlerts, ...prev].slice(0, 10)); // Keep last 10 alerts
+        }
         
-        // Small delay to prevent overwhelming
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      
-      setLivePrices(liveData);
-      setApiStatus('connected');
-      
-      // Update alerts if there are new ones
-      if (newAlerts.length > 0) {
-        setPriceAlerts(prev => [...newAlerts, ...prev].slice(0, 10)); // Keep last 10 alerts
-      }
-      
-    } catch (error) {
-      console.error('Error fetching live prices:', error);
-      setApiStatus('error');
-      
-      // Even on error, try to load CSV data
-      const fallbackData = {};
-      try {
-        for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
-          const csvData = await getCSVDataForLivePrice(commodity);
-          if (csvData && csvData.length > 0) {
-            const priceData = simulateLivePricesFromCSV(csvData);
-            
-            if (priceData && priceData.current) {
-              const targetCurrency = currencyMode === 'original' 
-                ? COMMODITY_CURRENCIES[commodity] 
-                : 'NGN';
+      } catch (error) {
+        console.error('Error fetching live prices:', error);
+        setApiStatus('error');
+        
+        // Even on error, try to load CSV data
+        const fallbackData = {};
+        try {
+          for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
+            const csvData = await getCSVDataForLivePrice(commodity);
+            if (csvData && csvData.length > 0) {
+              const priceData = simulateLivePricesFromCSV(csvData);
               
-              const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-              const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey);
-              const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey) : null;
-              
-              let displayCurrent = current;
-              if (commodity === 'wheat' && wheatDisplayUnit === 'usdPerKg' && current) {
-                displayCurrent = current / BUSHEL_TO_KG_WHEAT;
+              if (priceData && priceData.current) {
+                const targetCurrency = currencyMode === 'original' 
+                  ? COMMODITY_CURRENCIES[commodity] 
+                  : 'NGN';
+                
+                const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+                const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey, wheatDisplayUnit);
+                const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey, wheatDisplayUnit) : null;
+                
+                const percentages = {
+                  day: previous ? calculatePercentageChange(current, previous) : null,
+                  week: null,
+                  month: null,
+                  year: null
+                };
+                
+                fallbackData[commodity] = {
+                  current: current,
+                  previous,
+                  weekAgo: null,
+                  monthAgo: null,
+                  yearAgo: null,
+                  percentages,
+                  symbol,
+                  lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  status: 'csv_fallback',
+                  source: 'csv',
+                  latestDate: priceData.date,
+                  csvFallbackInfo: `Error fallback: ${csvData.length} CSV records`
+                };
               }
-              
-              const percentages = {
-                day: previous ? calculatePercentageChange(displayCurrent, previous) : null,
-                week: null,
-                month: null,
-                year: null
-              };
-              
-              fallbackData[commodity] = {
-                current: displayCurrent,
-                previous,
-                weekAgo: null,
-                monthAgo: null,
-                yearAgo: null,
-                percentages,
-                symbol,
-                lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                status: 'csv_fallback',
-                source: 'csv',
-                latestDate: priceData.date,
-                csvFallbackInfo: `Error fallback: ${csvData.length} CSV records`
-              };
             }
           }
+        } catch (csvError) {
+          console.error('Even CSV fallback failed:', csvError);
         }
-      } catch (csvError) {
-        console.error('Even CSV fallback failed:', csvError);
+        
+        // Merge any CSV fallback data
+        setLivePrices(prev => ({ ...prev, ...fallbackData }));
+        
+      } finally {
+        setLoadingLivePrices(false);
       }
-      
-      // Merge any CSV fallback data
-      setLivePrices(prev => ({ ...prev, ...fallbackData }));
-      
-    } finally {
-      setLoadingLivePrices(false);
-    }
-  };
+    };
 
-  fetchLivePrices();
-  
-  const intervalId = setInterval(fetchLivePrices, 5 * 60 * 1000);
-  
-  return () => clearInterval(intervalId);
-}, [currencyMode, wheatDisplayUnit]);
+    fetchLivePrices();
+    
+    const intervalId = setInterval(fetchLivePrices, 5 * 60 * 1000);
+    
+    return () => clearInterval(intervalId);
+  }, [currencyMode, wheatDisplayUnit]);
 
-  // Fetch API data and combine with Excel data - Updated with wheat display unit
+  // Fetch API data and combine with Excel data - Updated with wheat display unit fix
   useEffect(() => {
     const fetchAllCommodityData = async () => {
       setLoading(true);
@@ -1346,7 +1334,8 @@ useEffect(() => {
           
           console.log(`Fetching historical data for ${commodity}:`, {
             excelMonths: excelMonthly.length,
-            monthKeys: excelMonthly.map(m => m.monthKey)
+            monthKeys: excelMonthly.map(m => m.monthKey),
+            wheatDisplayUnit
           });
           
           if (excelMonthly.length === 0) {
@@ -1361,7 +1350,7 @@ useEffect(() => {
           }
           
           const excelMonths = excelMonthly.map(item => item.monthKey);
-          const result = await fetchMonthlyPricesWithFallback(symbol, commodity, excelMonths);
+          const result = await fetchMonthlyPricesWithFallback(symbol, commodity, excelMonths, wheatDisplayUnit);
           
           const apiMonthly = processApiDataByMonth(commodity, result.data, currencyMode, wheatDisplayUnit);
           const combinedData = combineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUnit);
@@ -1457,62 +1446,6 @@ useEffect(() => {
     return () => clearInterval(intervalId);
   }, [excelMonthlyData, currencyMode, wheatDisplayUnit]);
 
-  // UPDATED: Fetch daily prices with CSV fallback
-  async function fetchDailyPrices(symbol, days = 30) {
-    try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - days);
-      
-      const startStr = formatDateForAPI(startDate);
-      const endStr = formatDateForAPI(endDate);
-      
-      const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
-      
-      console.log(`Fetching daily prices for ${symbol}: ${url}`);
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const text = await response.text();
-      
-      if (!text || text.includes('error') || text.includes('No data')) {
-        return [];
-      }
-      
-      const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
-      
-      const dailyData = [];
-      lines.forEach(line => {
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length >= 6) {
-          const symbol = parts[0];
-          const date = parts[1];
-          const closePrice = parseFloat(parts[5]);
-          const volume = parts.length > 6 ? parseInt(parts[6]) : 0;
-          
-          if (!isNaN(closePrice) && closePrice > 0) {
-            dailyData.push({
-              date,
-              price: closePrice,
-              volume: volume || 0,
-              symbol: symbol
-            });
-          }
-        }
-      });
-      
-      console.log(`Fetched ${dailyData.length} daily prices for ${symbol}`);
-      return dailyData.sort((a, b) => new Date(a.date) - new Date(b.date));
-      
-    } catch (error) {
-      console.error(`Error fetching daily prices for ${symbol}:`, error);
-      return []; // Return empty array, CSV fallback will be used
-    }
-  }
-
   function calculatePercentageChange(current, previous) {
     if (!previous || previous === 0 || !current) return null;
     return ((current - previous) / previous) * 100;
@@ -1578,7 +1511,9 @@ useEffect(() => {
             alignItems: 'center'
           }}>
             <span style={{ fontWeight: 'bold', color: config.excelColor, fontSize: '16px' }}>
-              {data.excelPrice.toFixed(dec)} {units}
+              {selectedCommodity === 'wheat' && wheatDisplayUnit === 'usdPerKg' 
+                ? formatPriceForDisplay(data.excelPrice, selectedCommodity, wheatDisplayUnit, dec)
+                : data.excelPrice.toFixed(dec)} {units}
             </span>
             {selectedCommodity === 'aluminum' ? (
               <span style={{ fontSize: '11px', color: '#9ca3af' }}>
@@ -1606,7 +1541,9 @@ useEffect(() => {
               alignItems: 'center'
             }}>
               <span style={{ fontWeight: 'bold', color: config.apiColor, fontSize: '16px' }}>
-                {data.apiPrice.toFixed(dec)} {units}
+                {selectedCommodity === 'wheat' && wheatDisplayUnit === 'usdPerKg' 
+                  ? formatPriceForDisplay(data.apiPrice, selectedCommodity, wheatDisplayUnit, dec)
+                  : data.apiPrice.toFixed(dec)} {units}
               </span>
               <span style={{ fontSize: '11px', color: '#9ca3af' }}>
                 {data.apiDataPoints} trading day{data.apiDataPoints !== 1 ? 's' : ''}
@@ -1772,29 +1709,29 @@ useEffect(() => {
           </div>
         </div>
         
-        {/* NEW: Price Alerts Section */}
+        {/* FIXED: Price Alerts Section - Only shows negative changes */}
         {priceAlerts.length > 0 && (
           <div style={{
             marginBottom: '16px',
             padding: '12px',
-            backgroundColor: '#fef3c7',
+            backgroundColor: '#fee2e2',
             borderRadius: '8px',
-            border: '2px solid #fbbf24',
+            border: '2px solid #ef4444',
             animation: 'pulse 2s infinite'
           }}>
             <style>
               {`
                 @keyframes pulse {
-                  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
-                  70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
-                  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+                  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+                  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+                  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
                 }
               `}
             </style>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
               <span style={{ fontSize: '20px' }}>⚠️</span>
-              <span style={{ fontWeight: '600', fontSize: '16px', color: '#92400e' }}>
-                Price Alerts ({priceAlerts.length})
+              <span style={{ fontWeight: '600', fontSize: '16px', color: '#dc2626' }}>
+                Price Drop Alerts ({priceAlerts.length})
               </span>
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1805,9 +1742,9 @@ useEffect(() => {
                     key={index}
                     style={{
                       padding: '8px 12px',
-                      backgroundColor: alert.severity === 'high' ? '#fee2e2' : '#fef3c7',
+                      backgroundColor: alert.severity === 'high' ? '#fecaca' : '#fed7aa',
                       borderRadius: '6px',
-                      border: `1px solid ${alert.severity === 'high' ? '#fca5a5' : '#fbbf24'}`,
+                      border: `1px solid ${alert.severity === 'high' ? '#f87171' : '#fb923c'}`,
                       fontSize: '12px',
                       display: 'flex',
                       alignItems: 'center',
@@ -1815,15 +1752,15 @@ useEffect(() => {
                     }}
                   >
                     <span style={{ fontSize: '14px' }}>{config?.icon}</span>
-                    <span style={{ color: alert.severity === 'high' ? '#dc2626' : '#92400e' }}>
+                    <span style={{ color: alert.severity === 'high' ? '#b91c1c' : '#c2410c' }}>
                       {alert.message}
                     </span>
                     <span style={{ 
                       fontWeight: 'bold',
-                      color: alert.severity === 'high' ? '#dc2626' : '#92400e',
+                      color: alert.severity === 'high' ? '#b91c1c' : '#c2410c',
                       fontSize: '11px'
                     }}>
-                      {alert.percentage < 0 ? '▼' : '▲'} {Math.abs(alert.percentage).toFixed(1)}%
+                      ▼ {Math.abs(alert.percentage).toFixed(1)}%
                     </span>
                   </div>
                 );
@@ -1873,7 +1810,7 @@ useEffect(() => {
               </div>
             </div>
             
-            {/* Alert Notification Bell */}
+            {/* Alert Notification Bell - Only shows for negative alerts */}
             <div style={{
               position: 'relative',
               cursor: 'pointer'
@@ -1919,12 +1856,30 @@ useEffect(() => {
             fontSize: '11px',
             color: '#6b7280'
           }}>
-            <span style={{ fontWeight: '600' }}>Alerts Active:</span> 
-            Daily drop &gt;1% • Weekly drop &gt;3% • Monthly drop &gt;5%
+            <span style={{ fontWeight: '600' }}>Drop Alerts Active:</span> 
+            Daily drop &gt;1% • Weekly drop &gt;3% • Monthly drop &gt;5% (Negative changes only)
           </div>
+          
+          {/* Wheat Unit Info */}
+          {selectedCommodity === 'wheat' && (
+            <div style={{
+              marginTop: '8px',
+              padding: '6px',
+              backgroundColor: '#f0f9ff',
+              borderRadius: '4px',
+              fontSize: '11px',
+              color: '#0369a1',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <span>🌾 Wheat Conversion:</span>
+              <span>1 bushel = {BUSHEL_TO_KG_WHEAT.toFixed(2)} kg</span>
+              <span>• Current unit: {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'}</span>
+              <span>• Percentage changes consistent across units</span>
+            </div>
+          )}
         </div>
-        
-        {/* NEW: Wheat Display Unit Selector - MOVED TO TOP RIGHT OF CHART SECTION */}
         
         {/* API Status Banner */}
         <div style={{
@@ -1986,6 +1941,18 @@ useEffect(() => {
               }}>
                 CSV: {Object.values(dataSource).filter(s => s === 'csv').length}
               </span>
+              {priceAlerts.length > 0 && (
+                <span style={{ 
+                  backgroundColor: '#ef4444', 
+                  color: 'white', 
+                  padding: '2px 6px', 
+                  borderRadius: '3px',
+                  fontSize: '10px',
+                  animation: 'pulse 2s infinite'
+                }}>
+                  Alerts: {priceAlerts.length}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -2003,9 +1970,13 @@ useEffect(() => {
         fontFamily: 'monospace'
       }}>
         <strong>Data Sources:</strong> {dataDebug || 'Loading...'} | 
-        <strong> Alerts:</strong> {priceAlerts.length} active | 
+        <strong> Drop Alerts:</strong> {priceAlerts.length} active | 
         <strong> Currency:</strong> {currencyMode.toUpperCase()} | 
+        <strong> Wheat Unit:</strong> {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'} |
         <strong>Current USD/NGN:</strong> 1460
+        {selectedCommodity === 'wheat' && (
+          <span> | <strong>Conversion:</strong> 1 bushel = {BUSHEL_TO_KG_WHEAT.toFixed(2)} kg</span>
+        )}
       </div>
 
       {/* Error display */}
@@ -2045,7 +2016,7 @@ useEffect(() => {
             : 'NGN';
           const units = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
           
-          // Check for live price alerts for this commodity
+          // Check for live price alerts for this commodity (only negative)
           const commodityAlerts = priceAlerts.filter(alert => alert.commodity === commodity);
           const hasAlerts = commodityAlerts.length > 0;
           
@@ -2056,11 +2027,11 @@ useEffect(() => {
               style={{
                 padding: '12px 20px',
                 backgroundColor: isSelected ? '#1e40af' : 
-                                hasAlerts ? '#fef3c7' : '#f3f4f6',
+                                hasAlerts ? '#fee2e2' : '#f3f4f6',
                 color: isSelected ? 'white' : 
-                       hasAlerts ? '#92400e' : '#374151',
+                       hasAlerts ? '#dc2626' : '#374151',
                 border: `2px solid ${isSelected ? '#1e40af' : 
-                                    hasAlerts ? '#fbbf24' : '#e5e7eb'}`,
+                                    hasAlerts ? '#ef4444' : '#e5e7eb'}`,
                 borderRadius: '8px',
                 fontSize: '14px',
                 fontWeight: 600,
@@ -2191,7 +2162,7 @@ useEffect(() => {
                 : 'NGN';
               const units = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
               
-              // Check for live price alerts
+              // Check for live price alerts (only negative)
               const commodityAlerts = priceAlerts.filter(alert => alert.commodity === commodity);
               const hasAlerts = commodityAlerts.length > 0;
               
@@ -2201,10 +2172,10 @@ useEffect(() => {
                   style={{
                     padding: '16px',
                     backgroundColor: commodity === selectedCommodity ? '#eff6ff' : 
-                                    hasAlerts ? '#fef3c7' : 'white',
+                                    hasAlerts ? '#fee2e2' : 'white',
                     borderRadius: '12px',
                     border: `2px solid ${commodity === selectedCommodity ? '#3B82F6' : 
-                                            hasAlerts ? '#fbbf24' : '#e5e7eb'}`,
+                                            hasAlerts ? '#ef4444' : '#e5e7eb'}`,
                     cursor: 'pointer',
                     transition: 'all 0.2s',
                     position: 'relative'
@@ -2236,7 +2207,7 @@ useEffect(() => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontSize: '18px' }}>{config.icon}</span>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: '14px', color: hasAlerts ? '#92400e' : '#374151' }}>{config.name}</div>
+                        <div style={{ fontWeight: 600, fontSize: '14px', color: hasAlerts ? '#dc2626' : '#374151' }}>{config.name}</div>
                         <div style={{ fontSize: '11px', color: '#6b7280' }}>{units}</div>
                       </div>
                     </div>
@@ -2341,14 +2312,19 @@ useEffect(() => {
                       {hasAlerts && (
                         <div style={{ 
                           fontSize: '10px',
-                          color: '#dc2626',
-                          backgroundColor: '#fee2e2',
+                          color: '#b91c1c',
+                          backgroundColor: '#fecaca',
                           padding: '2px 4px',
                           borderRadius: '3px',
                           textAlign: 'center',
-                          marginTop: '4px'
+                          marginTop: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '2px'
                         }}>
-                          🔔 {commodityAlerts.length} alert{commodityAlerts.length !== 1 ? 's' : ''}
+                          <span>▼</span>
+                          <span>{commodityAlerts.length} price drop alert{commodityAlerts.length !== 1 ? 's' : ''}</span>
                         </div>
                       )}
                     </div>
@@ -2377,6 +2353,9 @@ useEffect(() => {
                     }}>
                       <div>Data: {source === 'api' ? 'API' : source === 'csv' ? 'CSV' : 'None'} ({wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'})</div>
                       <div>1 bushel = {BUSHEL_TO_KG_WHEAT.toFixed(2)} kg wheat</div>
+                      {livePrices[commodity]?.basePriceUSDperBushel && (
+                        <div>Base: {livePrices[commodity].basePriceUSDperBushel.toFixed(2)} USD/bushel</div>
+                      )}
                     </div>
                   )}
                   
@@ -2446,11 +2425,11 @@ useEffect(() => {
                 </div>
               </div>
               <div>
-                <div style={{ color: '#f59e0b', fontWeight: 600, marginBottom: '4px' }}>🔔 Price Alerts</div>
+                <div style={{ color: '#ef4444', fontWeight: 600, marginBottom: '4px' }}>🔔 Price Drop Alerts</div>
                 <div style={{ color: '#374151' }}>
-                  Automatic alerts for price drops: &gt;1% daily, &gt;3% weekly, &gt;5% monthly
+                  Automatic alerts for price drops only: &gt;1% daily, &gt;3% weekly, &gt;5% monthly
                   <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                    {priceAlerts.length} active alerts across all commodities
+                    {priceAlerts.length} active alerts (negative changes only)
                   </div>
                 </div>
               </div>
@@ -2463,11 +2442,9 @@ useEffect(() => {
             {selectedCommodity === 'wheat' && (
               <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
                 Wheat Unit: {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'} (1 bushel = {BUSHEL_TO_KG_WHEAT.toFixed(2)} kg)
-              </div>
-            )}
-            {selectedCommodity === 'palm' && (
-              <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '8px' }}>
-                Palm Oil: Converted from MYR/tonne to USD/tonne
+                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                  Percentage changes are consistent across units (no double conversion)
+                </div>
               </div>
             )}
           </div>
@@ -2522,11 +2499,14 @@ useEffect(() => {
                   Data Source: {dataSource[selectedCommodity] === 'api' ? '🌐 Live API' : 
                                dataSource[selectedCommodity] === 'csv' ? '📁 CSV Fallback' : 
                                '⚠️ No Market Data'}
+                  {selectedCommodity === 'wheat' && (
+                    <span> • Unit: {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'}</span>
+                  )}
                 </div>
               </div>
             </div>
             
-            {/* NEW: Wheat Display Unit Selector - MOVED HERE */}
+            {/* Wheat Display Unit Selector */}
             {selectedCommodity === 'wheat' && (
               <div style={{
                 padding: '8px 12px',
@@ -2680,7 +2660,7 @@ useEffect(() => {
             )}
           </div>
 
-          {/* UPDATED: LIVE PRICES TABLE WITH CSV FALLBACK */}
+          {/* FIXED: LIVE PRICES TABLE WITH CORRECT WHEAT CALCULATIONS */}
           <div style={{
             marginTop: '24px',
             padding: '16px',
@@ -2700,10 +2680,10 @@ useEffect(() => {
                   Live Commodity Prices
                 </div>
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                  Real-time market prices from {Object.values(dataSource).some(s => s === 'csv') ? 'CSV fallback' : 'DDFPlus API'} in {selectedCommodity === 'palm' ? 'USD/tonne' : getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit)}
+                  Real-time market prices from {Object.values(dataSource).some(s => s === 'csv') ? 'CSV fallback' : 'DDFPlus API'} in {getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit)}
                   <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
                     Refreshing every 5 minutes • Currency Mode: {currencyMode.toUpperCase()} • Using historical FX rates
-                    {Object.values(livePrices).some(lp => lp.source === 'csv') && ' • 📁 CSV Fallback Active'}
+                    {selectedCommodity === 'wheat' && ` • Wheat: ${wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'}`}
                   </div>
                 </div>
               </div>
@@ -2763,13 +2743,22 @@ useEffect(() => {
                       const hasData = liveData.current !== null;
                       const statusColor = hasData ? '#059669' : '#dc2626';
                       
-                      // Check for alerts
+                      // Check for alerts (only negative)
                       const hasAlerts = priceAlerts.filter(a => a.commodity === commodity).length > 0;
+                      
+                      // FIXED: Format price for display
+                      const formatDisplayPrice = (price) => {
+                        if (price == null) return null;
+                        if (commodity === 'wheat' && wheatDisplayUnit === 'usdPerKg') {
+                          return price; // Already converted in convertApiValueToTargetCurrency
+                        }
+                        return price;
+                      };
                       
                       return (
                         <tr key={commodity} style={{ 
                           backgroundColor: rowBg,
-                          ...(hasAlerts && { borderLeft: '4px solid #fbbf24' })
+                          ...(hasAlerts && { borderLeft: '4px solid #ef4444' })
                         }}>
                           <td style={{ 
                             padding: '12px', 
@@ -2798,7 +2787,7 @@ useEffect(() => {
                                   fontWeight: 'bold',
                                   animation: 'pulse 2s infinite'
                                 }}>
-                                  !
+                                  ▼
                                 </span>
                               )}
                             </div>
@@ -2814,13 +2803,18 @@ useEffect(() => {
                           }}>
                             {hasData ? (
                               <div>
-                                <div>{liveData.current?.toFixed(dec)}</div>
+                                <div>{formatDisplayPrice(liveData.current)?.toFixed(dec)}</div>
                                 <div style={{ fontSize: '11px', color: '#6b7280' }}>{units}</div>
+                                {commodity === 'wheat' && liveData.basePriceUSDperBushel && (
+                                  <div style={{ fontSize: '9px', color: '#8B5CF6', marginTop: '2px' }}>
+                                    Base: {liveData.basePriceUSDperBushel.toFixed(2)} USD/bushel
+                                  </div>
+                                )}
                               </div>
                             ) : '—'}
                           </td>
                           
-                          {/* Day % */}
+                          {/* Day % - Only show red for negative, green for positive */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
@@ -2829,10 +2823,8 @@ useEffect(() => {
                             {hasData && liveData.percentages?.day !== null ? (
                               <span style={{
                                 fontWeight: '600',
-                                color: liveData.percentages.day >= 0 ? '#059669' : 
-                                      (liveData.percentages.day < -1 ? '#dc2626' : '#d97706'),
-                                backgroundColor: liveData.percentages.day >= 0 ? '#d1fae5' : 
-                                                (liveData.percentages.day < -1 ? '#fee2e2' : '#fef3c7'),
+                                color: liveData.percentages.day >= 0 ? '#059669' : '#dc2626',
+                                backgroundColor: liveData.percentages.day >= 0 ? '#d1fae5' : '#fee2e2',
                                 padding: '4px 8px',
                                 borderRadius: '4px',
                                 fontSize: '12px',
@@ -2852,7 +2844,7 @@ useEffect(() => {
                           }}>
                             {hasData && liveData.weekAgo ? (
                               <div>
-                                <div>{liveData.weekAgo.toFixed(dec)}</div>
+                                <div>{formatDisplayPrice(liveData.weekAgo)?.toFixed(dec)}</div>
                                 <div style={{ fontSize: '10px', color: '#9ca3af' }}>
                                   {liveData.weekAgoDate ? new Date(liveData.weekAgoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
                                 </div>
@@ -2860,7 +2852,7 @@ useEffect(() => {
                             ) : '—'}
                           </td>
                           
-                          {/* Week % */}
+                          {/* Week % - Only show red for negative */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
@@ -2869,10 +2861,8 @@ useEffect(() => {
                             {hasData && liveData.percentages?.week !== null ? (
                               <span style={{
                                 fontWeight: '600',
-                                color: liveData.percentages.week >= 0 ? '#059669' : 
-                                      (liveData.percentages.week < -3 ? '#dc2626' : '#d97706'),
-                                backgroundColor: liveData.percentages.week >= 0 ? '#d1fae5' : 
-                                                (liveData.percentages.week < -3 ? '#fee2e2' : '#fef3c7'),
+                                color: liveData.percentages.week >= 0 ? '#059669' : '#dc2626',
+                                backgroundColor: liveData.percentages.week >= 0 ? '#d1fae5' : '#fee2e2',
                                 padding: '4px 8px',
                                 borderRadius: '4px',
                                 fontSize: '12px',
@@ -2892,7 +2882,7 @@ useEffect(() => {
                           }}>
                             {hasData && liveData.monthAgo ? (
                               <div>
-                                <div>{liveData.monthAgo.toFixed(dec)}</div>
+                                <div>{formatDisplayPrice(liveData.monthAgo)?.toFixed(dec)}</div>
                                 <div style={{ fontSize: '10px', color: '#9ca3af' }}>
                                   {liveData.monthAgoDate ? new Date(liveData.monthAgoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
                                 </div>
@@ -2900,7 +2890,7 @@ useEffect(() => {
                             ) : '—'}
                           </td>
                           
-                          {/* Month % */}
+                          {/* Month % - Only show red for negative */}
                           <td style={{ 
                             padding: '12px', 
                             textAlign: 'center', 
@@ -2909,10 +2899,8 @@ useEffect(() => {
                             {hasData && liveData.percentages?.month !== null ? (
                               <span style={{
                                 fontWeight: '600',
-                                color: liveData.percentages.month >= 0 ? '#059669' : 
-                                      (liveData.percentages.month < -5 ? '#dc2626' : '#d97706'),
-                                backgroundColor: liveData.percentages.month >= 0 ? '#d1fae5' : 
-                                                (liveData.percentages.month < -5 ? '#fee2e2' : '#fef3c7'),
+                                color: liveData.percentages.month >= 0 ? '#059669' : '#dc2626',
+                                backgroundColor: liveData.percentages.month >= 0 ? '#d1fae5' : '#fee2e2',
                                 padding: '4px 8px',
                                 borderRadius: '4px',
                                 fontSize: '12px',
@@ -2986,7 +2974,7 @@ useEffect(() => {
                   <div>
                     <span style={{ fontWeight: '600' }}>Last Updated:</span> {livePrices.wheat?.lastUpdated || 'N/A'}
                     <span style={{ marginLeft: '12px', fontWeight: '600' }}>Currency Mode:</span> {currencyMode.toUpperCase()}
-                    <span style={{ marginLeft: '12px', fontWeight: '600' }}>Alerts:</span> {priceAlerts.length} active
+                    <span style={{ marginLeft: '12px', fontWeight: '600' }}>Drop Alerts:</span> {priceAlerts.length} active
                   </div>
                   <div style={{ display: 'flex', gap: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2998,8 +2986,8 @@ useEffect(() => {
                       <span>CSV Fallback</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <div style={{ width: '8px', height: '8px', backgroundColor: '#fbbf24', borderRadius: '50%' }}></div>
-                      <span>Alert Active</span>
+                      <div style={{ width: '8px', height: '8px', backgroundColor: '#ef4444', borderRadius: '50%' }}></div>
+                      <span>Price Drop Alert</span>
                     </div>
                   </div>
                   <button
@@ -3056,7 +3044,7 @@ useEffect(() => {
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
               • Automatic CSV fallback when API fails<br/>
               • CSV Live Price Simulation<br/>
-              • Price drop alerts (>1% daily, >3% weekly, >5% monthly)<br/>
+              • <strong>Price drop alerts only</strong> (&gt;1% daily, &gt;3% weekly, &gt;5% monthly)<br/>
               • Wheat: Toggle USD/kg or USD/bushel<br/>
               • Historical FX rates by month<br/>
               • Current USD/NGN: 1460<br/>
@@ -3064,13 +3052,13 @@ useEffect(() => {
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>CSV Fallback Logic</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>CSV Fallback & Wheat Fix</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
               • Last CSV date = "Today" price<br/>
               • Previous date = "Yesterday"<br/>
-              • ~7 days ago = "Week Ago"<br/>
-              • ~30 days ago = "Month Ago"<br/>
-              • ~365 days ago = "Year Ago"<br/>
+              • <strong>Wheat: Consistent percentage across units</strong><br/>
+              • 1 bushel = {BUSHEL_TO_KG_WHEAT.toFixed(2)} kg<br/>
+              • No double conversion for wheat percentages<br/>
               • Using actual CSV dates for accuracy
             </div>
           </div>
