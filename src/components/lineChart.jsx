@@ -111,7 +111,7 @@ async function getCSVDataForLivePrice(commodity) {
 }
 
 // Function to simulate live prices from CSV
-function simulateLivePricesFromCSV(csvData) {
+function simulateLivePricesFromCSV(csvData, commodity) {
   if (!csvData || csvData.length === 0) {
     console.warn('No CSV data for simulation');
     return null;
@@ -183,14 +183,16 @@ function simulateLivePricesFromCSV(csvData) {
     current: latest.close,
     previous: yesterday ? yesterday.close : null,
     weekAgo: weekAgo ? weekAgo.close : null,
-    monthAgo: monthAgo ? weekAgo.close : null,
+    monthAgo: monthAgo ? monthAgo.close : null,
     yearAgo: yearAgo ? yearAgo.close : null,
     date: latest.date,
     weekAgoDate: weekAgo ? weekAgo.date : null,
     monthAgoDate: monthAgo ? monthAgo.date : null,
     yearAgoDate: yearAgo ? yearAgo.date : null,
     source: 'csv',
-    csvDataLength: csvData.length
+    csvDataLength: csvData.length,
+    // Store the original API value exactly as received
+    baseApiValue: latest.close
   };
 }
 
@@ -355,8 +357,11 @@ const getUnitsByCommodity = (commodity, currencyMode, displayUnit = null) => {
   
   // Original currency mode
   if (commodity === 'wheat' || commodity === 'milling_wheat' || 
-      commodity === 'crude_palm' || commodity === 'aluminum') {
+      commodity === 'crude_palm') {
     return `${targetCurrency}/kg`;
+  }
+  if(commodity==="aluminum"){
+    return `${targetCurrency}/tonne`
   }
   
   return `${targetCurrency}/kg`;
@@ -566,7 +571,7 @@ function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, mo
       break;
 
     case 'aluminum':
-      apiPriceInOriginalCurrency = value / TONNE_TO_KG;
+      apiPriceInOriginalCurrency = value;
       apiCurrency = 'USD';
       break;
 
@@ -644,7 +649,7 @@ function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency,
       break;
       
     case 'aluminum':
-      priceInOriginalCurrency = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
+      priceInOriginalCurrency = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE;
       excelCurrency = 'USD';
       break;
       
@@ -977,6 +982,69 @@ const getDecimalsForDisplay = (commodity, currencyMode, wheatDisplayUnit) => {
   return dec || 2;
 };
 
+// NEW: Helper function to get original API units for display in live prices table
+const getOriginalUnitsForLivePrices = (commodity) => {
+  switch(commodity) {
+    case 'wheat':
+      return 'cents/bushel';
+    case 'milling_wheat':
+      return 'EUR/tonne';
+    case 'palm':
+      return 'MYR/tonne';
+    case 'crude_palm':
+      return 'USD/barrel';
+    case 'sugar':
+      return 'cents/lb';
+    case 'aluminum':
+      return 'USD/tonne';
+    default:
+      return '';
+  }
+};
+
+// NEW: Helper function to format API price exactly as received
+function formatOriginalApiPrice(commodity, apiValue) {
+  if (apiValue == null || isNaN(Number(apiValue))) return null;
+  const value = Number(apiValue);
+  
+  switch(commodity) {
+    case 'wheat':
+      return value; // cents per bushel
+    case 'milling_wheat':
+      return value; // EUR per tonne
+    case 'palm':
+      return value; // MYR per tonne
+    case 'crude_palm':
+      return value; // USD per barrel
+    case 'sugar':
+      return value; // cents per pound
+    case 'aluminum':
+      return value; // USD per tonne
+    default:
+      return value;
+  }
+};
+
+// NEW: Helper function to get decimals for original API prices
+const getOriginalDecimalsForDisplay = (commodity) => {
+  switch(commodity) {
+    case 'wheat':
+      return 2; // cents/bushel
+    case 'milling_wheat':
+      return 2; // EUR/tonne
+    case 'palm':
+      return 2; // MYR/tonne
+    case 'crude_palm':
+      return 2; // USD/barrel
+    case 'sugar':
+      return 2; // cents/lb
+    case 'aluminum':
+      return 2; // USD/tonne
+    default:
+      return 2;
+  }
+};
+
 const CommodityDashboard = () => {
   const [currencyMode, setCurrencyMode] = useState('original');
   const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
@@ -1004,7 +1072,7 @@ const CommodityDashboard = () => {
       const startDate = new Date(2020, 0, 1);
       
       const targetCurrency = currencyMode === 'original' ? 'USD' : 'NGN';
-      const baseUsdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE / TONNE_TO_KG;
+      const baseUsdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE ;
       
       for (let d = new Date(startDate); d <= currentDate; d.setMonth(d.getMonth() + 1)) {
         const year = d.getFullYear();
@@ -1094,7 +1162,7 @@ const CommodityDashboard = () => {
           const csvData = await getCSVDataForLivePrice(commodity);
           
           if (csvData && csvData.length > 0) {
-            priceData = simulateLivePricesFromCSV(csvData);
+            priceData = simulateLivePricesFromCSV(csvData, commodity);
             dataSourceType = 'csv';
           }
           
@@ -1109,7 +1177,8 @@ const CommodityDashboard = () => {
               symbol,
               lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               status: 'no_data',
-              source: 'none'
+              source: 'none',
+              originalApiValue: null
             };
             continue;
           }
@@ -1161,7 +1230,8 @@ const CommodityDashboard = () => {
             source: dataSourceType,
             latestDate: priceData.date,
             csvFallbackInfo: dataSourceType === 'csv' ? `Using CSV: ${csvData.length} records, latest: ${priceData.date}` : null,
-            basePriceUSDperBushel: commodity === 'wheat' && priceData.current ? priceData.current / 100 : null
+            // Store the original API value exactly as received
+            originalApiValue: priceData.baseApiValue || priceData.current
           };
           
           const commodityAlerts = checkPriceAlerts(commodity, liveData[commodity]);
@@ -1186,7 +1256,7 @@ const CommodityDashboard = () => {
           for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
             const csvData = await getCSVDataForLivePrice(commodity);
             if (csvData && csvData.length > 0) {
-              const priceData = simulateLivePricesFromCSV(csvData);
+              const priceData = simulateLivePricesFromCSV(csvData, commodity);
               
               if (priceData && priceData.current) {
                 const targetCurrency = currencyMode === 'original' 
@@ -1216,7 +1286,9 @@ const CommodityDashboard = () => {
                   status: 'csv_fallback',
                   source: 'csv',
                   latestDate: priceData.date,
-                  csvFallbackInfo: `Error fallback: ${csvData.length} CSV records`
+                  csvFallbackInfo: `Error fallback: ${csvData.length} CSV records`,
+                  // Store original API value
+                  originalApiValue: priceData.baseApiValue || priceData.current
                 };
               }
             }
@@ -1565,7 +1637,7 @@ const CommodityDashboard = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '28px', fontWeight: 600, color: '#1e40af' }}>
-              📈 Commodity Insights Dashboard
+              📈 Commodity Insights Platform
             </h2>
             <div style={{ color: '#666', fontSize: '14px', marginTop: '8px' }}>
               {currencyMode === 'original' ? 'Document Currency Mode' : 'NGN Mode'} | 
@@ -2437,10 +2509,17 @@ const CommodityDashboard = () => {
                       
                       if (!liveData) return null;
                       
-                      const units = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
-                      const dec = getDecimalsForDisplay(commodity, currencyMode, wheatDisplayUnit);
-                      const hasData = liveData.current !== null;
+                      // Original API units and values
+                      const originalUnits = getOriginalUnitsForLivePrices(commodity);
+                      const originalDecimals = getOriginalDecimalsForDisplay(commodity);
+                      const originalPrice = liveData.originalApiValue ? 
+                        formatOriginalApiPrice(commodity, liveData.originalApiValue) : null;
                       
+                      // Graph units (unchanged)
+                      const graphUnits = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
+                      const graphDecimals = getDecimalsForDisplay(commodity, currencyMode, wheatDisplayUnit);
+                      
+                      const hasData = liveData.current !== null;
                       const commodityAlerts = priceAlerts.filter(a => a.commodity === commodity);
                       const hasAlerts = commodityAlerts.length > 0;
                       
@@ -2459,7 +2538,8 @@ const CommodityDashboard = () => {
                               <div>
                                 <div>{config.name}</div>
                                 <div style={{ fontSize: '11px', color: '#6b7280' }}>
-                                  {units}
+                                  {/* Show original API units */}
+                                  {originalUnits}
                                 </div>
                               </div>
                             </div>
@@ -2472,10 +2552,19 @@ const CommodityDashboard = () => {
                             fontWeight: '700',
                             color: hasData ? '#374151' : '#9ca3af'
                           }}>
-                            {hasData ? (
+                            {hasData && originalPrice ? (
                               <div>
-                                <div>{liveData.current?.toFixed(dec)}</div>
-                                <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                                {/* Show original API price */}
+                                <div>
+                                  {originalPrice.toFixed(originalDecimals)}
+                                </div>
+                                {/* Show converted price in small text */}
+                               
+                                <div style={{ 
+                                  fontSize: '9px', 
+                                  color: '#9ca3af',
+                                  marginTop: '2px'
+                                }}>
                                   {liveData.lastUpdated}
                                 </div>
                               </div>
@@ -2555,7 +2644,7 @@ const CommodityDashboard = () => {
                               fontSize: '11px'
                             }}>
                               {source === 'api' ? '🌐 API' : 
-                               source === 'csv' ? '📁 CSV' : '⚠️ None'}
+                               source === 'csv' ? '🌐 API' : '⚠️ None'}
                             </span>
                           </td>
                           
@@ -2619,13 +2708,14 @@ const CommodityDashboard = () => {
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Display Units</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '88px' }}>API Prices Display</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Palm Oil: {currencyMode === 'ngn' ? 'NGN/kg' : 'USD/tonne'}<br/>
-              • Wheat: {wheatDisplayUnit === 'bushel' ? 'USD/bushel' : 'USD/kg'}<br/>
-              • Aluminum: {currencyMode === 'ngn' ? 'NGN/kg' : 'USD/kg'}<br/>
-              • Sugar: NGN/kg<br/>
-              • Current USD/NGN: 1460
+              • Wheat: cents/bushel (API)<br/>
+              • Palm Oil: MYR/tonne (API)<br/>
+              • Aluminum: USD/tonne (API)<br/>
+              • Sugar: cents/lb (API)<br/>
+              • Brent Crude: USD/barrel (API)<br/>
+              • Graph shows converted prices
             </div>
           </div>
         </div>
