@@ -1224,7 +1224,7 @@ const memoizedGetOriginalDecimalsForDisplay = (() => {
 })();
 
 // NEW: ML Forecasting Functions
-const FORECAST_API_URL = 'http://localhost:5001/api/forecast';
+const FORECAST_API_URL = 'https://ml-mhwe.onrender.com/api/forecast';
 
 // OPTIMIZATION: Memoized forecast fetcher with cache
 const memoizedFetchMLForecast = (() => {
@@ -1258,7 +1258,6 @@ const memoizedFetchMLForecast = (() => {
       }
       
       const data = await response.json();
-      
       if (data.error) {
         throw new Error(data.error);
       }
