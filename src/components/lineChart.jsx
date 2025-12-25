@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
-
+import CommodityNewsSection from './News';
 // Import your Excel data
 import {
   COMPLETE_WHEAT_DATA,
@@ -3048,27 +3048,7 @@ const CommodityDashboard = () => {
             <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151' }}>
               Forecast Period:
             </span>
-            <select
-              value={forecastMonths}
-              onChange={(e) => {
-                setForecastMonths(parseInt(e.target.value));
-              }}
-              style={{
-                padding: '6px 12px',
-                backgroundColor: 'white',
-                border: '1px solid #3B82F6',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: '600',
-                color: '#1e40af',
-                cursor: 'pointer'
-              }}
-            >
-              <option value={6}>6 months (Jan 2026 - Jun 2026)</option>
-              <option value={12}>12 months (Jan 2026 - Dec 2026)</option>
-              <option value={18}>18 months (Jan 2026 - Jun 2027)</option>
-              <option value={24}>24 months (Jan 2026 - Dec 2027)</option>
-            </select>
+           
           </div>
           
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -4106,52 +4086,9 @@ const CommodityDashboard = () => {
       </div>
 
       {/* Footer */}
-      <div style={{
-        marginTop: '32px',
-        padding: '20px',
-        backgroundColor: '#f8fafc',
-        borderRadius: '12px',
-        border: '2px solid #e5e7eb'
-      }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
-          <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Data Sources</div>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Real-time DDFPlus API<br/>
-              • Historical CSV Fallback<br/>
-              • Excel Purchase Records<br/>
-              • Dates: 2020-2025<br/>
-              • Historical FX Rates<br/>
-              • 🤖 ML Forecasting API
-            </div>
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>Key Features</div>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Automatic CSV fallback<br/>
-              • Profit/Loss Analysis<br/>
-              • Price drop alerts<br/>
-              • Multiple currency modes<br/>
-              • Wheat unit conversion<br/>
-              • 5-minute live updates<br/>
-              • 🤖 ML Price Forecasting<br/>
-              • Future price predictions
-            </div>
-          </div>
-          <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>ML Forecasting</div>
-            <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Real API Data (primary)<br/>
-              • 5-minute cache TTL<br/>
-              • Smart fallback system<br/>
-              • Force refresh option<br/>
-              • Data discrepancy checks<br/>
-              • Same currency conversion<br/>
-              • Debug mode enabled
-            </div>
-          </div>
-        </div>
-      </div>
+      
+        
+      <CommodityNewsSection/>
     </div>
   );
 };
