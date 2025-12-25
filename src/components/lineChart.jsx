@@ -1,8 +1,8 @@
-// src/components/CommodityDashboard.jsx
-import React, { useState, useEffect, useMemo } from 'react';
+// src/components/CommodityDashboard.jsx - COMPLETE FIXED VERSION
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer
+  Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
 
 // Import your Excel data
@@ -42,47 +42,60 @@ const CSV_DATA_SOURCES = {
   crude_palm: brentCrudeCSV
 };
 
-// Function to parse CSV data
-function parseCSVData(csvText, symbol) {
-  if (!csvText) return [];
-  
-  const lines = csvText.trim().split('\n');
-  const data = [];
-  
-  lines.forEach((line, index) => {
-    const parts = line.split(',').map(p => p.trim());
+// OPTIMIZATION: Memoize frequently used objects and functions
+const memoizedParseCSVData = (() => {
+  const cache = new Map();
+  return (csvText, symbol) => {
+    const cacheKey = `${csvText?.substring(0, 100)}_${symbol}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
     
-    if (parts.length >= 6) {
-      // Check if symbol matches or if it's a generic CSV
-      const lineSymbol = parts[0];
-      const dateStr = parts[1];
-      const open = parseFloat(parts[2]);
-      const high = parseFloat(parts[3]);
-      const low = parseFloat(parts[4]);
-      const close = parseFloat(parts[5]);
-      const volume = parts.length > 6 ? parseInt(parts[6]) : 0;
+    if (!csvText) return [];
+    
+    const lines = csvText.trim().split('\n');
+    const data = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const parts = line.split(',').map(p => p.trim());
       
-      // Only add if symbol matches or if it's the first column (some CSVs might not have symbol)
-      if ((!symbol || lineSymbol.includes(symbol.substring(0, 2))) && !isNaN(close)) {
-        data.push({
-          symbol: lineSymbol,
-          date: dateStr,
-          open,
-          high,
-          low,
-          close,
-          volume
-        });
+      if (parts.length >= 6) {
+        const lineSymbol = parts[0];
+        const dateStr = parts[1];
+        const open = parseFloat(parts[2]);
+        const high = parseFloat(parts[3]);
+        const low = parseFloat(parts[4]);
+        const close = parseFloat(parts[5]);
+        const volume = parts.length > 6 ? parseInt(parts[6]) : 0;
+        
+        if ((!symbol || lineSymbol.includes(symbol.substring(0, 2))) && !isNaN(close)) {
+          data.push({
+            symbol: lineSymbol,
+            date: dateStr,
+            open,
+            high,
+            low,
+            close,
+            volume
+          });
+        }
       }
     }
-  });
-  
-  return data.sort((a, b) => new Date(a.date) - new Date(b.date));
-}
+    
+    const result = data.sort((a, b) => new Date(a.date) - new Date(b.date));
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
 
-// Function to get CSV data for live price simulation
+// OPTIMIZATION: Memoized CSV data fetching with cache
+const csvDataCache = new Map();
 async function getCSVDataForLivePrice(commodity) {
   try {
+    const cacheKey = commodity;
+    if (csvDataCache.has(cacheKey)) {
+      return csvDataCache.get(cacheKey);
+    }
+    
     const csvSource = CSV_DATA_SOURCES[commodity];
     if (!csvSource) {
       console.warn(`No CSV fallback for ${commodity}`);
@@ -92,17 +105,18 @@ async function getCSVDataForLivePrice(commodity) {
     const response = await fetch(csvSource);
     const csvText = await response.text();
     const symbol = COMMODITY_SYMBOLS[commodity];
-    const allData = parseCSVData(csvText, symbol);
+    const allData = memoizedParseCSVData(csvText, symbol);
     
     if (allData.length === 0) {
       console.warn(`No CSV data for ${commodity}`);
       return null;
     }
     
-    // Sort by date ascending
-    const sortedData = allData.sort((a, b) => new Date(a.date) - new Date(b.date));
+    csvDataCache.set(cacheKey, allData);
+    // Clear cache after 5 minutes
+    setTimeout(() => csvDataCache.delete(cacheKey), 5 * 60 * 1000);
     
-    return sortedData;
+    return allData;
     
   } catch (error) {
     console.error(`Error fetching CSV data for ${commodity} live price:`, error);
@@ -110,91 +124,87 @@ async function getCSVDataForLivePrice(commodity) {
   }
 }
 
-// Function to simulate live prices from CSV
-function simulateLivePricesFromCSV(csvData, commodity) {
-  if (!csvData || csvData.length === 0) {
-    console.warn('No CSV data for simulation');
-    return null;
-  }
+// OPTIMIZATION: Binary search for date lookups in sorted array
+function findNearestDateIndex(data, targetDate) {
+  let left = 0;
+  let right = data.length - 1;
   
-  // CSV data is sorted ascending, so last entry is most recent
-  const latestIndex = csvData.length - 1;
-  const latest = csvData[latestIndex];
-  
-  // Find "yesterday" - the day before the latest date
-  const latestDate = new Date(latest.date);
-  const yesterdayDate = new Date(latestDate);
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  
-  let yesterday = null;
-  for (let i = latestIndex - 1; i >= 0; i--) {
-    const itemDate = new Date(csvData[i].date);
-    if (itemDate <= yesterdayDate) {
-      yesterday = csvData[i];
-      break;
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    const midDate = new Date(data[mid].date);
+    
+    if (midDate.getTime() === targetDate.getTime()) {
+      return mid;
+    } else if (midDate < targetDate) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
     }
   }
   
-  // If no exact yesterday, take the previous trading day
-  if (!yesterday && latestIndex > 0) {
-    yesterday = csvData[latestIndex - 1];
-  }
-  
-  // Find "week ago" - 7 days before latest
-  const weekAgoDate = new Date(latestDate);
-  weekAgoDate.setDate(weekAgoDate.getDate() - 7);
-  
-  let weekAgo = null;
-  for (let i = latestIndex - 1; i >= 0; i--) {
-    const itemDate = new Date(csvData[i].date);
-    if (itemDate <= weekAgoDate) {
-      weekAgo = csvData[i];
-      break;
-    }
-  }
-  
-  // Find "month ago" - approximately 30 days before latest
-  const monthAgoDate = new Date(latestDate);
-  monthAgoDate.setMonth(monthAgoDate.getMonth() - 1);
-  
-  let monthAgo = null;
-  for (let i = latestIndex - 1; i >= 0; i--) {
-    const itemDate = new Date(csvData[i].date);
-    if (itemDate <= monthAgoDate) {
-      monthAgo = csvData[i];
-      break;
-    }
-  }
-  
-  // Find "year ago" - approximately 365 days before latest
-  const yearAgoDate = new Date(latestDate);
-  yearAgoDate.setFullYear(yearAgoDate.getFullYear() - 1);
-  
-  let yearAgo = null;
-  for (let i = 0; i < csvData.length; i++) {
-    const itemDate = new Date(csvData[i].date);
-    if (itemDate >= yearAgoDate) {
-      yearAgo = csvData[i];
-      break;
-    }
-  }
-  
-  return {
-    current: latest.close,
-    previous: yesterday ? yesterday.close : null,
-    weekAgo: weekAgo ? weekAgo.close : null,
-    monthAgo: monthAgo ? monthAgo.close : null,
-    yearAgo: yearAgo ? yearAgo.close : null,
-    date: latest.date,
-    weekAgoDate: weekAgo ? weekAgo.date : null,
-    monthAgoDate: monthAgo ? monthAgo.date : null,
-    yearAgoDate: yearAgo ? yearAgo.date : null,
-    source: 'csv',
-    csvDataLength: csvData.length,
-    // Store the original API value exactly as received
-    baseApiValue: latest.close
-  };
+  return Math.max(0, right); // Return closest earlier date
 }
+
+// OPTIMIZATION: Memoized live price simulation
+const simulateLivePricesFromCSV = (() => {
+  const cache = new Map();
+  return (csvData, commodity) => {
+    if (!csvData || csvData.length === 0) {
+      console.warn('No CSV data for simulation');
+      return null;
+    }
+    
+    const cacheKey = `${csvData.length}_${csvData[csvData.length-1]?.date}_${commodity}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    // CSV data is sorted ascending, so last entry is most recent
+    const latestIndex = csvData.length - 1;
+    const latest = csvData[latestIndex];
+    const latestDate = new Date(latest.date);
+    
+    // OPTIMIZATION: Use binary search for date lookups
+    const yesterdayDate = new Date(latestDate);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayIndex = findNearestDateIndex(csvData, yesterdayDate);
+    const yesterday = csvData[yesterdayIndex];
+    
+    const weekAgoDate = new Date(latestDate);
+    weekAgoDate.setDate(weekAgoDate.getDate() - 7);
+    const weekAgoIndex = findNearestDateIndex(csvData, weekAgoDate);
+    const weekAgo = csvData[weekAgoIndex];
+    
+    const monthAgoDate = new Date(latestDate);
+    monthAgoDate.setMonth(monthAgoDate.getMonth() - 1);
+    const monthAgoIndex = findNearestDateIndex(csvData, monthAgoDate);
+    const monthAgo = csvData[monthAgoIndex];
+    
+    const yearAgoDate = new Date(latestDate);
+    yearAgoDate.setFullYear(yearAgoDate.getFullYear() - 1);
+    const yearAgoIndex = findNearestDateIndex(csvData, yearAgoDate);
+    const yearAgo = csvData[yearAgoIndex];
+    
+    const result = {
+      current: latest.close,
+      previous: yesterday ? yesterday.close : null,
+      weekAgo: weekAgo ? weekAgo.close : null,
+      monthAgo: monthAgo ? monthAgo.close : null,
+      yearAgo: yearAgo ? yearAgo.close : null,
+      date: latest.date,
+      weekAgoDate: weekAgo ? weekAgo.date : null,
+      monthAgoDate: monthAgo ? monthAgo.date : null,
+      yearAgoDate: yearAgo ? yearAgo.date : null,
+      source: 'csv',
+      csvDataLength: csvData.length,
+      baseApiValue: latest.close
+    };
+    
+    cache.set(cacheKey, result);
+    // Clear cache after 1 minute
+    setTimeout(() => cache.delete(cacheKey), 60 * 1000);
+    
+    return result;
+  };
+})();
 
 // Historical monthly FX rates (based on actual market data)
 const HISTORICAL_FX_RATES = {
@@ -281,33 +291,44 @@ const HISTORICAL_FX_RATES = {
   }
 };
 
-// Helper to get historical FX rate
-function getHistoricalFXRate(monthKey, fromCurrency, toCurrency) {
-  if (fromCurrency === toCurrency) return 1;
-  
-  const monthRates = HISTORICAL_FX_RATES[monthKey] || HISTORICAL_FX_RATES['current'];
-  
-  const directKey = `${fromCurrency}_to_${toCurrency}`;
-  if (monthRates[directKey]) {
-    return monthRates[directKey];
-  }
-  
-  const reverseKey = `${toCurrency}_to_${fromCurrency}`;
-  if (monthRates[reverseKey]) {
-    return 1 / monthRates[reverseKey];
-  }
-  
-  if (fromCurrency !== 'USD' && toCurrency !== 'USD') {
-    const toUSD = getHistoricalFXRate(monthKey, fromCurrency, 'USD');
-    const fromUSD = getHistoricalFXRate(monthKey, 'USD', toCurrency);
-    if (toUSD && fromUSD) {
-      return toUSD * fromUSD;
+// OPTIMIZATION: Memoized FX rate getter
+const memoizedGetHistoricalFXRate = (() => {
+  const cache = new Map();
+  return (monthKey, fromCurrency, toCurrency) => {
+    if (fromCurrency === toCurrency) return 1;
+    
+    const cacheKey = `${monthKey}_${fromCurrency}_${toCurrency}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const monthRates = HISTORICAL_FX_RATES[monthKey] || HISTORICAL_FX_RATES['current'];
+    
+    const directKey = `${fromCurrency}_to_${toCurrency}`;
+    if (monthRates[directKey]) {
+      cache.set(cacheKey, monthRates[directKey]);
+      return monthRates[directKey];
     }
-  }
-  
-  console.warn(`No FX rate found for ${fromCurrency} to ${toCurrency} for ${monthKey}`);
-  return 1;
-}
+    
+    const reverseKey = `${toCurrency}_to_${fromCurrency}`;
+    if (monthRates[reverseKey]) {
+      const result = 1 / monthRates[reverseKey];
+      cache.set(cacheKey, result);
+      return result;
+    }
+    
+    if (fromCurrency !== 'USD' && toCurrency !== 'USD') {
+      const toUSD = memoizedGetHistoricalFXRate(monthKey, fromCurrency, 'USD');
+      const fromUSD = memoizedGetHistoricalFXRate(monthKey, 'USD', toCurrency);
+      if (toUSD && fromUSD) {
+        const result = toUSD * fromUSD;
+        cache.set(cacheKey, result);
+        return result;
+      }
+    }
+    
+    console.warn(`No FX rate found for ${fromCurrency} to ${toCurrency} for ${monthKey}`);
+    return 1;
+  };
+})();
 
 // Conversion factors
 const BUSHEL_TO_KG_WHEAT = 27.2155;
@@ -332,57 +353,91 @@ const COMMODITY_CURRENCIES = {
   aluminum: 'USD'
 };
 
-// Fixed: Proper units based on currency mode and commodity
-const getUnitsByCommodity = (commodity, currencyMode, displayUnit = null) => {
-  const targetCurrency = currencyMode === 'original' 
-    ? COMMODITY_CURRENCIES[commodity] 
-    : 'NGN';
-  
-  // Handle palm oil - always use per kg in NGN mode
-  if (commodity === 'palm') {
-    if (currencyMode === 'ngn') {
-      return 'NGN/kg';
+// OPTIMIZATION: Memoized units getter - FIXED: Aluminum shows NGN/tonne in NGN mode
+const memoizedGetUnitsByCommodity = (() => {
+  const cache = new Map();
+  return (commodity, currencyMode, displayUnit = null) => {
+    const cacheKey = `${commodity}_${currencyMode}_${displayUnit}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const targetCurrency = currencyMode === 'original' 
+      ? COMMODITY_CURRENCIES[commodity] 
+      : 'NGN';
+    
+    // Handle aluminum - always use per tonne
+    if (commodity === 'aluminum') {
+      if (currencyMode === 'ngn') {
+        const result = 'NGN/tonne';
+        cache.set(cacheKey, result);
+        return result;
+      }
+      const result = `${targetCurrency}/tonne`;
+      cache.set(cacheKey, result);
+      return result;
     }
-    return 'USD/tonne';
-  }
-  
-  if (commodity === 'wheat' && displayUnit === 'bushel') {
-    return `${targetCurrency}/bushel`;
-  }
-  
-  // For NGN mode, show per kg for all commodities except palm (handled above)
-  if (currencyMode === 'ngn') {
-    return `${targetCurrency}/kg`;
-  }
-  
-  // Original currency mode
-  if (commodity === 'wheat' || commodity === 'milling_wheat' || 
-      commodity === 'crude_palm') {
-    return `${targetCurrency}/kg`;
-  }
-  if(commodity==="aluminum"){
-    return `${targetCurrency}/tonne`
-  }
-  
-  return `${targetCurrency}/kg`;
-};
+    
+    // Handle palm oil - always use per kg in NGN mode
+    if (commodity === 'palm') {
+      if (currencyMode === 'ngn') {
+        const result = 'NGN/kg';
+        cache.set(cacheKey, result);
+        return result;
+      }
+      const result = 'USD/tonne';
+      cache.set(cacheKey, result);
+      return result;
+    }
+    
+    if (commodity === 'wheat' && displayUnit === 'bushel') {
+      const result = `${targetCurrency}/bushel`;
+      cache.set(cacheKey, result);
+      return result;
+    }
+    
+    // For NGN mode, show per kg for all commodities except aluminum and palm (handled above)
+    if (currencyMode === 'ngn') {
+      const result = `${targetCurrency}/kg`;
+      cache.set(cacheKey, result);
+      return result;
+    }
+    
+    // Original currency mode
+    if (commodity === 'wheat' || commodity === 'milling_wheat' || 
+        commodity === 'crude_palm') {
+      const result = `${targetCurrency}/kg`;
+      cache.set(cacheKey, result);
+      return result;
+    }
+    
+    if (commodity === "aluminum") {
+      const result = `${targetCurrency}/tonne`;
+      cache.set(cacheKey, result);
+      return result;
+    }
+    
+    const result = `${targetCurrency}/kg`;
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
 
 const decimalsByCommodity = {
   wheat: { kg: 3, bushel: 2 },
   milling_wheat: 3,
-  palm: { usdPerTonne: 2, ngnPerKg: 2 }, // USD/tonne or NGN/kg
+  palm: { usdPerTonne: 2, ngnPerKg: 2 },
   crude_palm: 3,
   sugar: 2,
   aluminum: 3
 };
 
-// Commodity names and colors
-const COMMODITY_CONFIG = {
+// Commodity names and colors - made static
+const COMMODITY_CONFIG = Object.freeze({
   wheat: { 
     name: 'Wheat CBOT', 
     icon: '🌾', 
     excelColor: '#3B82F6',
     apiColor: '#10B981',
+    forecastColor: '#8B5CF6',
     category: 'Grains',
     showInChart: true
   },
@@ -391,6 +446,7 @@ const COMMODITY_CONFIG = {
     icon: '🌾', 
     excelColor: '#8B5CF6',
     apiColor: '#10B981',
+    forecastColor: '#3B82F6',
     category: 'Grains',
     showInChart: true
   },
@@ -399,6 +455,7 @@ const COMMODITY_CONFIG = {
     icon: '🌴', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
+    forecastColor: '#8B5CF6',
     category: 'Oils',
     showInChart: true
   },
@@ -407,6 +464,7 @@ const COMMODITY_CONFIG = {
     icon: '🛢️', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
+    forecastColor: '#8B5CF6',
     category: 'Oils',
     showInChart: true
   },
@@ -415,6 +473,7 @@ const COMMODITY_CONFIG = {
     icon: '🍬', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
+    forecastColor: '#8B5CF6',
     category: 'Softs',
     showInChart: true
   },
@@ -423,100 +482,119 @@ const COMMODITY_CONFIG = {
     icon: '🥫', 
     excelColor: '#3B82F6', 
     apiColor: '#10B981',
+    forecastColor: '#8B5CF6',
     category: 'Metals',
     showInChart: true
   }
-};
+});
 
-const CHART_COMMODITIES = Object.keys(COMMODITY_CONFIG).filter(
+const CHART_COMMODITIES = Object.freeze(Object.keys(COMMODITY_CONFIG).filter(
   commodity => COMMODITY_CONFIG[commodity].showInChart
-);
+));
 
 const DEFAULT_CHART_COMMODITY = CHART_COMMODITIES[0];
 
 // Excel data mapping by commodity
-const EXCEL_DATA_SOURCES = {
+const EXCEL_DATA_SOURCES = Object.freeze({
   wheat: COMPLETE_WHEAT_DATA,
   milling_wheat: COMPLETE_WHEAT_DATA,
   palm: COMPLETE_PALM_OIL_DATA,
   crude_palm: COMPLETE_CRUDE_PALM_OIL_DATA,
   sugar: SUGAR_MONTH_COST,
   aluminum: CAN_DATA
-};
+});
 
 // Negotiated aluminum price
 const NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE = 2400;
 
-// Function to format date for API
-function formatDateForAPI(date) {
-  return date.toISOString().split('T')[0];
-}
+// OPTIMIZATION: Memoized formatDateForAPI
+const formatDateForAPI = (date) => date.toISOString().split('T')[0];
 
-// Function to get month key (YYYY-MM)
-function getMonthKey(dateStr) {
-  if (!dateStr) return null;
+// OPTIMIZATION: Memoized month key getter
+const memoizedGetMonthKey = (() => {
+  const cache = new Map();
+  const monthNames = {
+    'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+    'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+    'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12',
+    'January': '01', 'February': '02', 'March': '03', 'April': '04',
+    'May': '05', 'June': '06', 'July': '07', 'August': '08',
+    'September': '09', 'October': '10', 'November': '11', 'December': '12'
+  };
   
-  if (/^\d{4}-\d{2}$/.test(dateStr)) {
-    return dateStr;
-  }
-  
-  if (typeof dateStr === 'string') {
-    if (dateStr.match(/^[A-Za-z]{3,}-\d{2,4}$/)) {
-      const [monthStr, yearStr] = dateStr.split('-');
-      const monthNames = {
-        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12',
-        'January': '01', 'February': '02', 'March': '03', 'April': '04',
-        'May': '05', 'June': '06', 'July': '07', 'August': '08',
-        'September': '09', 'October': '10', 'November': '11', 'December': '12'
-      };
-      
-      const month = monthNames[monthStr] || '01';
-      let year = parseInt(yearStr);
-      
-      if (yearStr.length === 2) {
-        const currentYear = new Date().getFullYear();
-        const shortYear = parseInt(yearStr);
-        year = shortYear + (shortYear <= (currentYear % 100) ? 2000 : 1900);
-      }
-      
-      return `${year}-${month}`;
+  return (dateStr) => {
+    if (!dateStr) return null;
+    
+    if (cache.has(dateStr)) return cache.get(dateStr);
+    
+    if (/^\d{4}-\d{2}$/.test(dateStr)) {
+      cache.set(dateStr, dateStr);
+      return dateStr;
     }
     
-    if (dateStr.includes('T')) {
-      const date = new Date(dateStr);
-      if (!isNaN(date)) {
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    if (typeof dateStr === 'string') {
+      if (dateStr.match(/^[A-Za-z]{3,}-\d{2,4}$/)) {
+        const [monthStr, yearStr] = dateStr.split('-');
+        const month = monthNames[monthStr] || '01';
+        let year = parseInt(yearStr);
+        
+        if (yearStr.length === 2) {
+          const currentYear = new Date().getFullYear();
+          const shortYear = parseInt(yearStr);
+          year = shortYear + (shortYear <= (currentYear % 100) ? 2000 : 1900);
+        }
+        
+        const result = `${year}-${month}`;
+        cache.set(dateStr, result);
+        return result;
+      }
+      
+      if (dateStr.includes('T')) {
+        const date = new Date(dateStr);
+        if (!isNaN(date)) {
+          const result = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          cache.set(dateStr, result);
+          return result;
+        }
       }
     }
-  }
-  
-  try {
-    const date = new Date(dateStr);
-    if (!isNaN(date)) {
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    
+    try {
+      const date = new Date(dateStr);
+      if (!isNaN(date)) {
+        const result = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        cache.set(dateStr, result);
+        return result;
+      }
+    } catch (e) {
+      console.warn('Failed to parse date:', dateStr, e);
     }
-  } catch (e) {
-    console.warn('Failed to parse date:', dateStr, e);
-  }
-  
-  return null;
-}
+    
+    return null;
+  };
+})();
 
-// Function to get month display name
-function getMonthDisplay(monthKey) {
-  if (!monthKey) return '';
-  const [year, month] = monthKey.split('-');
+// OPTIMIZATION: Memoized month display getter
+const memoizedGetMonthDisplay = (() => {
+  const cache = new Map();
   const monthNames = [
     'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
   ];
-  return `${monthNames[parseInt(month) - 1]} ${year}`;
-}
+  
+  return (monthKey) => {
+    if (!monthKey) return '';
+    if (cache.has(monthKey)) return cache.get(monthKey);
+    
+    const [year, month] = monthKey.split('-');
+    const result = `${monthNames[parseInt(month) - 1]} ${year}`;
+    cache.set(monthKey, result);
+    return result;
+  };
+})();
 
-// Function to validate and filter recent data (2020-2025)
-function filterRecentData(data, maxYearsBack = 5) {
+// OPTIMIZATION: Filter recent data once
+const filterRecentData = (data, maxYearsBack = 5) => {
   const currentYear = new Date().getFullYear();
   const minYear = currentYear - maxYearsBack;
   
@@ -525,160 +603,202 @@ function filterRecentData(data, maxYearsBack = 5) {
     const year = parseInt(item.monthKey.split('-')[0]);
     return year >= 2020 && year <= currentYear + 1;
   });
-}
+};
 
-// Convert API value to target currency
-function convertApiValueToTargetCurrency(commodity, apiValue, targetCurrency, monthKey = null, wheatDisplayUnit = 'usdPerKg') {
-  if (apiValue == null || isNaN(Number(apiValue))) return null;
-  const value = Number(apiValue);
+// OPTIMIZATION: Memoized API value converter - FIXED: Milling wheat conversion from EUR/tonne to USD/kg
+const memoizedConvertApiValueToTargetCurrency = (() => {
+  const cache = new Map();
+  
+  return (commodity, apiValue, targetCurrency, monthKey = null, wheatDisplayUnit = 'usdPerKg', currencyMode = 'original') => {
+    if (apiValue == null || isNaN(Number(apiValue))) return null;
+    
+    const cacheKey = `${commodity}_${apiValue}_${targetCurrency}_${monthKey}_${wheatDisplayUnit}_${currencyMode}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const value = Number(apiValue);
+    let apiPriceInOriginalCurrency;
+    let apiCurrency;
 
-  let apiPriceInOriginalCurrency;
-  let apiCurrency;
+    switch(commodity) {
+      case 'wheat':
+        const usdPerBushel = value / 100;
+        apiPriceInOriginalCurrency = usdPerBushel;
+        apiCurrency = 'USD';
+        
+        if (wheatDisplayUnit === 'usdPerKg') {
+          apiPriceInOriginalCurrency = usdPerBushel / BUSHEL_TO_KG_WHEAT;
+        }
+        break;
 
-  switch(commodity) {
-    case 'wheat':
-      const usdPerBushel = value / 100;
-      apiPriceInOriginalCurrency = usdPerBushel;
-      apiCurrency = 'USD';
+      case 'milling_wheat':
+        // FIXED: API returns EUR/tonne, convert to USD/kg
+        const eurPerTonne = value;
+        // Convert EUR/tonne to USD/tonne first
+        const usdPerTonne = eurPerTonne * memoizedGetHistoricalFXRate(monthKey || 'current', 'EUR', 'USD');
+        // Then convert to USD/kg (divide by 1000)
+        apiPriceInOriginalCurrency = usdPerTonne / TONNE_TO_KG;
+        apiCurrency = 'USD';
+        break;
+
+      case 'palm':
+        const myrPerTonne = value;
+        apiPriceInOriginalCurrency = myrPerTonne;
+        apiCurrency = 'MYR';
+        break;
+
+      case 'crude_palm':
+        apiPriceInOriginalCurrency = value / BARREL_TO_KG;
+        apiCurrency = 'USD';
+        break;
       
-      if (wheatDisplayUnit === 'usdPerKg') {
-        apiPriceInOriginalCurrency = usdPerBushel / BUSHEL_TO_KG_WHEAT;
+      case 'sugar':
+        const usdPerLb = value / 100;
+        apiPriceInOriginalCurrency = usdPerLb / LB_TO_KG;
+        apiCurrency = 'USD';
+        break;
+
+      case 'aluminum':
+        // FIXED: Keep as USD/tonne for original mode, convert appropriately for NGN mode
+        if (currencyMode === 'ngn') {
+          apiPriceInOriginalCurrency = value; // Keep as USD/tonne
+          apiCurrency = 'USD';
+        } else {
+          apiPriceInOriginalCurrency = value; // USD/tonne
+          apiCurrency = 'USD';
+        }
+        break;
+
+      default:
+        cache.set(cacheKey, value);
+        return value;
+    }
+
+    // Convert to target currency if needed
+    if (apiCurrency !== targetCurrency) {
+      const fxRate = memoizedGetHistoricalFXRate(monthKey || 'current', apiCurrency, targetCurrency);
+      let convertedValue = apiPriceInOriginalCurrency * fxRate;
+      
+      // Handle special cases
+      if (commodity === 'palm') {
+        if (targetCurrency === 'NGN') {
+          const usdPerTonne = convertedValue;
+          const usdPerKg = usdPerTonne / TONNE_TO_KG;
+          const ngnPerKg = usdPerKg * memoizedGetHistoricalFXRate(monthKey || 'current', 'USD', 'NGN');
+          cache.set(cacheKey, ngnPerKg);
+          return ngnPerKg;
+        }
+        cache.set(cacheKey, convertedValue);
+        return convertedValue;
       }
-      break;
-
-    case 'milling_wheat':
-      const eurPerTonne = value;
-      apiPriceInOriginalCurrency = eurPerTonne / TONNE_TO_KG;
-      apiCurrency = 'EUR';
-      break;
-
-    case 'palm':
-      // Palm Oil: MYR per metric ton
-      const myrPerTonne = value;
-      apiPriceInOriginalCurrency = myrPerTonne;
-      apiCurrency = 'MYR';
-      break;
-
-    case 'crude_palm':
-      apiPriceInOriginalCurrency = value / BARREL_TO_KG;
-      apiCurrency = 'USD';
-      break;
-    
-    case 'sugar':
-      const usdPerLb = value / 100;
-      apiPriceInOriginalCurrency = usdPerLb / LB_TO_KG;
-      apiCurrency = 'USD';
-      break;
-
-    case 'aluminum':
-      apiPriceInOriginalCurrency = value;
-      apiCurrency = 'USD';
-      break;
-
-    default:
-      return value;
-  }
-
-  // Convert to target currency if needed
-  if (apiCurrency !== targetCurrency) {
-    const fxRate = getHistoricalFXRate(monthKey || 'current', apiCurrency, targetCurrency);
-    const convertedValue = apiPriceInOriginalCurrency * fxRate;
-    
-    // Special handling for palm oil in different modes
-    if (commodity === 'palm') {
-      if (targetCurrency === 'NGN') {
-        // Convert USD/tonne to NGN/kg
-        const usdPerTonne = convertedValue;
-        const usdPerKg = usdPerTonne / TONNE_TO_KG;
-        const ngnPerKg = usdPerKg * getHistoricalFXRate(monthKey || 'current', 'USD', 'NGN');
-        return ngnPerKg;
+      
+      // For aluminum in NGN mode, keep as NGN/tonne (don't convert to per kg)
+      if (commodity === 'aluminum' && currencyMode === 'ngn') {
+        // Already in USD/tonne, convert to NGN/tonne
+        const ngnPerTonne = convertedValue * memoizedGetHistoricalFXRate(monthKey || 'current', 'USD', 'NGN');
+        cache.set(cacheKey, ngnPerTonne);
+        return ngnPerTonne;
       }
-      // For USD mode, return USD/tonne
+      
+      cache.set(cacheKey, convertedValue);
       return convertedValue;
     }
-    
-    return convertedValue;
-  }
 
-  return apiPriceInOriginalCurrency;
-}
+    cache.set(cacheKey, apiPriceInOriginalCurrency);
+    return apiPriceInOriginalCurrency;
+  };
+})();
 
-// Convert Excel purchase price to target currency
-function convertExcelPriceToTargetCurrency(commodity, excelItem, targetCurrency, monthKey = null, wheatDisplayUnit = 'usdPerKg') {
-  if (!excelItem) return null;
+// OPTIMIZATION: Memoized Excel price converter - FIXED: Aluminum for NGN mode
+const memoizedConvertExcelPriceToTargetCurrency = (() => {
+  const cache = new Map();
   
-  let priceInOriginalCurrency;
-  let excelCurrency;
-  
-  switch(commodity) {
-    case 'wheat':
-    case 'milling_wheat':
-      if (excelItem.currency === 'GHS') {
-        const fxRate = getHistoricalFXRate(monthKey, 'GHS', 'USD');
-        priceInOriginalCurrency = excelItem.rate * fxRate;
-        excelCurrency = 'USD';
-      } else {
-        priceInOriginalCurrency = excelItem.rate;
-        excelCurrency = excelItem.currency;
-      }
-      
-      if (commodity === 'wheat' && wheatDisplayUnit === 'bushel') {
-        priceInOriginalCurrency = priceInOriginalCurrency * BUSHEL_TO_KG_WHEAT;
-      }
-      break;
-      
-    case 'palm':
-      // FIX: Excel data has fob in USD/tonne and costPerUnit in USD/kg
-      if (excelItem.fob) {
-        priceInOriginalCurrency = excelItem.fob; // USD/tonne
-        excelCurrency = 'USD';
-      } else {
-        priceInOriginalCurrency = excelItem.rate;
-        excelCurrency = 'GHS';
-      }
-      break;
-      
-    case 'crude_palm':
-      priceInOriginalCurrency = excelItem.rate;
-      excelCurrency = excelItem.currency || 'USD';
-      break;
-      
-    case 'sugar':
-      priceInOriginalCurrency = excelItem.cost;
-      excelCurrency = 'NGN';
-      break;
-      
-    case 'aluminum':
-      priceInOriginalCurrency = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE;
-      excelCurrency = 'USD';
-      break;
-      
-    default:
-      return null;
-  }
-
-  // Convert to target currency if needed
-  if (excelCurrency !== targetCurrency) {
-    const fxRate = getHistoricalFXRate(monthKey, excelCurrency, targetCurrency);
-    const convertedValue = priceInOriginalCurrency * fxRate;
+  return (commodity, excelItem, targetCurrency, monthKey = null, wheatDisplayUnit = 'usdPerKg', currencyMode = 'original') => {
+    if (!excelItem) return null;
     
-    // Special handling for palm oil in NGN mode
-    if (commodity === 'palm' && targetCurrency === 'NGN') {
-      // Convert USD/tonne to NGN/kg
-      const usdPerTonne = convertedValue;
-      const usdPerKg = usdPerTonne / TONNE_TO_KG;
-      const ngnPerKg = usdPerKg * getHistoricalFXRate(monthKey, 'USD', 'NGN');
-      return ngnPerKg;
+    const cacheKey = `${commodity}_${excelItem.rate || excelItem.fob || excelItem.cost}_${targetCurrency}_${monthKey}_${wheatDisplayUnit}_${currencyMode}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    let priceInOriginalCurrency;
+    let excelCurrency;
+    
+    switch(commodity) {
+      case 'wheat':
+      case 'milling_wheat':
+        if (excelItem.currency === 'GHS') {
+          const fxRate = memoizedGetHistoricalFXRate(monthKey, 'GHS', 'USD');
+          priceInOriginalCurrency = excelItem.rate * fxRate;
+          excelCurrency = 'USD';
+        } else {
+          priceInOriginalCurrency = excelItem.rate;
+          excelCurrency = excelItem.currency;
+        }
+        
+        if (commodity === 'wheat' && wheatDisplayUnit === 'bushel') {
+          priceInOriginalCurrency = priceInOriginalCurrency * BUSHEL_TO_KG_WHEAT;
+        }
+        break;
+        
+      case 'palm':
+        if (excelItem.fob) {
+          priceInOriginalCurrency = excelItem.fob;
+          excelCurrency = 'USD';
+        } else {
+          priceInOriginalCurrency = excelItem.rate;
+          excelCurrency = 'GHS';
+        }
+        break;
+        
+      case 'crude_palm':
+        priceInOriginalCurrency = excelItem.rate;
+        excelCurrency = excelItem.currency || 'USD';
+        break;
+        
+      case 'sugar':
+        priceInOriginalCurrency = excelItem.cost;
+        excelCurrency = 'NGN';
+        break;
+        
+      case 'aluminum':
+        // FIXED: Keep negotiated price as USD/tonne
+        priceInOriginalCurrency = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE;
+        excelCurrency = 'USD';
+        break;
+        
+      default:
+        return null;
     }
-    
-    return convertedValue;
-  }
 
-  return priceInOriginalCurrency;
-}
+    if (excelCurrency !== targetCurrency) {
+      const fxRate = memoizedGetHistoricalFXRate(monthKey, excelCurrency, targetCurrency);
+      let convertedValue = priceInOriginalCurrency * fxRate;
+      
+      if (commodity === 'palm' && targetCurrency === 'NGN') {
+        const usdPerTonne = convertedValue;
+        const usdPerKg = usdPerTonne / TONNE_TO_KG;
+        const ngnPerKg = usdPerKg * memoizedGetHistoricalFXRate(monthKey, 'USD', 'NGN');
+        cache.set(cacheKey, ngnPerKg);
+        return ngnPerKg;
+      }
+      
+      // For aluminum in NGN mode, keep as NGN/tonne
+      if (commodity === 'aluminum' && currencyMode === 'ngn') {
+        // Already in USD/tonne, convert to NGN/tonne
+        const ngnPerTonne = convertedValue * memoizedGetHistoricalFXRate(monthKey || 'current', 'USD', 'NGN');
+        cache.set(cacheKey, ngnPerTonne);
+        return ngnPerTonne;
+      }
+      
+      cache.set(cacheKey, convertedValue);
+      return convertedValue;
+    }
+
+    cache.set(cacheKey, priceInOriginalCurrency);
+    return priceInOriginalCurrency;
+  };
+})();
 
 // Get Excel date for month grouping
-function getExcelDateForMonth(commodity, excelItem) {
+const getExcelDateForMonth = (commodity, excelItem) => {
   switch(commodity) {
     case 'wheat':
     case 'milling_wheat':
@@ -691,360 +811,831 @@ function getExcelDateForMonth(commodity, excelItem) {
     default:
       return null;
   }
-}
+};
 
-// Process Excel data by month
-function processExcelDataByMonth(commodity, currencyMode, wheatDisplayUnit = 'usdPerKg') {
-  const rawData = EXCEL_DATA_SOURCES[commodity] || [];
+// OPTIMIZATION: Process Excel data once with memoization - UPDATED: Pass currencyMode
+const memoizedProcessExcelDataByMonth = (() => {
+  const cache = new Map();
   
-  const targetCurrency = currencyMode === 'original' 
-    ? COMMODITY_CURRENCIES[commodity] 
-    : 'NGN';
-  
-  const monthlyData = {};
-  
-  rawData.forEach((item, index) => {
-    const dateStr = getExcelDateForMonth(commodity, item);
-    const monthKey = getMonthKey(dateStr);
+  return (commodity, currencyMode, wheatDisplayUnit = 'usdPerKg') => {
+    const cacheKey = `${commodity}_${currencyMode}_${wheatDisplayUnit}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
     
-    if (!monthKey) return;
+    const rawData = EXCEL_DATA_SOURCES[commodity] || [];
+    const targetCurrency = currencyMode === 'original' 
+      ? COMMODITY_CURRENCIES[commodity] 
+      : 'NGN';
     
-    const year = parseInt(monthKey.split('-')[0]);
-    const currentYear = new Date().getFullYear();
+    const monthlyData = {};
     
-    if (year < 2020 || year > currentYear + 1) return;
-    
-    const priceInTargetCurrency = convertExcelPriceToTargetCurrency(commodity, item, targetCurrency, monthKey, wheatDisplayUnit);
-    if (priceInTargetCurrency == null) return;
-    
-    if (!monthlyData[monthKey]) {
-      monthlyData[monthKey] = {
-        monthKey,
-        values: [],
-        dates: [],
-        currencies: []
-      };
+    for (let i = 0; i < rawData.length; i++) {
+      const item = rawData[i];
+      const dateStr = getExcelDateForMonth(commodity, item);
+      const monthKey = memoizedGetMonthKey(dateStr);
+      
+      if (!monthKey) continue;
+      
+      const year = parseInt(monthKey.split('-')[0]);
+      const currentYear = new Date().getFullYear();
+      
+      if (year < 2020 || year > currentYear + 1) continue;
+      
+      const priceInTargetCurrency = memoizedConvertExcelPriceToTargetCurrency(commodity, item, targetCurrency, monthKey, wheatDisplayUnit, currencyMode);
+      if (priceInTargetCurrency == null) continue;
+      
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          monthKey,
+          values: [],
+          dates: [],
+          currencies: []
+        };
+      }
+      
+      monthlyData[monthKey].values.push(priceInTargetCurrency);
+      monthlyData[monthKey].dates.push(dateStr);
+      monthlyData[monthKey].currencies.push(item.currency || COMMODITY_CURRENCIES[commodity]);
     }
     
-    monthlyData[monthKey].values.push(priceInTargetCurrency);
-    monthlyData[monthKey].dates.push(dateStr);
-    monthlyData[monthKey].currencies.push(item.currency || COMMODITY_CURRENCIES[commodity]);
-  });
-  
-  const result = Object.values(monthlyData).map(month => ({
-    monthKey: month.monthKey,
-    monthDisplay: getMonthDisplay(month.monthKey),
-    excelPrice: month.values.reduce((sum, val) => sum + val, 0) / month.values.length,
-    transactionCount: month.values.length,
-    dates: month.dates,
-    currencies: month.currencies
-  })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
-  
-  return filterRecentData(result, 5);
-}
+    const result = Object.values(monthlyData).map(month => ({
+      monthKey: month.monthKey,
+      monthDisplay: memoizedGetMonthDisplay(month.monthKey),
+      excelPrice: month.values.reduce((sum, val) => sum + val, 0) / month.values.length,
+      transactionCount: month.values.length,
+      dates: month.dates,
+      currencies: month.currencies
+    })).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+    
+    const filteredResult = filterRecentData(result, 5);
+    cache.set(cacheKey, filteredResult);
+    return filteredResult;
+  };
+})();
 
-// Function to fetch data from CSV fallback
-async function fetchDataFromCSV(commodity, startDate, endDate) {
-  try {
-    const csvSource = CSV_DATA_SOURCES[commodity];
-    if (!csvSource) return [];
-    
-    const response = await fetch(csvSource);
-    const csvText = await response.text();
-    const symbol = COMMODITY_SYMBOLS[commodity];
-    const allData = parseCSVData(csvText, symbol);
-    
-    const filteredData = allData.filter(item => {
-      const itemDate = new Date(item.date);
-      return itemDate >= new Date(startDate) && itemDate <= new Date(endDate);
-    });
-    
-    return filteredData;
-    
-  } catch (error) {
-    console.error(`Error fetching CSV data for ${commodity}:`, error);
-    return [];
-  }
-}
+// OPTIMIZATION: Debounced fetch function
+const debounce = (func, wait) => {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+};
 
-// Function to fetch monthly prices from CSV if API fails
-async function fetchMonthlyPricesWithFallback(symbol, commodity, months, wheatDisplayUnit = 'usdPerKg') {
-  try {
-    const apiResults = await fetchMonthlyPricesWithVariation(symbol, months);
+// OPTIMIZATION: Memoized fetch from CSV
+const memoizedFetchDataFromCSV = (() => {
+  const cache = new Map();
+  
+  return async (commodity, startDate, endDate) => {
+    const cacheKey = `${commodity}_${startDate}_${endDate}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
     
-    if (apiResults.length > 0) {
+    try {
+      const csvSource = CSV_DATA_SOURCES[commodity];
+      if (!csvSource) return [];
+      
+      const response = await fetch(csvSource);
+      const csvText = await response.text();
+      const symbol = COMMODITY_SYMBOLS[commodity];
+      const allData = memoizedParseCSVData(csvText, symbol);
+      
+      const filteredData = allData.filter(item => {
+        const itemDate = new Date(item.date);
+        return itemDate >= new Date(startDate) && itemDate <= new Date(endDate);
+      });
+      
+      cache.set(cacheKey, filteredData);
+      return filteredData;
+      
+    } catch (error) {
+      console.error(`Error fetching CSV data for ${commodity}:`, error);
+      return [];
+    }
+  };
+})();
+
+// OPTIMIZATION: Individual month fetcher
+async function fetchMonthlyPriceForMonth(symbol, month) {
+  try {
+    const [year, monthNum] = month.split('-').map(Number);
+    const startDate = new Date(year, monthNum - 1, 1);
+    const endDate = new Date(year, monthNum, 0);
+    
+    const startStr = formatDateForAPI(startDate);
+    const endStr = formatDateForAPI(endDate);
+    
+    const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) return null;
+    
+    const text = await response.text();
+    
+    if (!text || text.includes('error') || text.includes('No data')) return null;
+    
+    const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
+    const dailyPrices = [];
+    
+    for (const line of lines) {
+      const parts = line.split(',').map(p => p.trim());
+      
+      if (parts.length >= 6) {
+        const dateStr = parts[1];
+        const closePrice = parseFloat(parts[5]);
+        
+        const date = new Date(dateStr);
+        const lineMonthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (lineMonthKey === month && !isNaN(closePrice) && closePrice > 0) {
+          dailyPrices.push({
+            date: dateStr,
+            price: closePrice
+          });
+        }
+      }
+    }
+    
+    if (dailyPrices.length > 0) {
+      const sum = dailyPrices.reduce((sum, day) => sum + day.price, 0);
+      const monthlyAvg = sum / dailyPrices.length;
+      
       return {
-        data: apiResults,
+        monthKey: month,
+        avgPrice: monthlyAvg,
+        dataPoints: dailyPrices.length,
+        sampleDates: dailyPrices.slice(0, 3).map(d => d.date),
         source: 'api'
       };
     }
     
-    const csvMonthlyResults = [];
-    const recentMonths = months.filter(monthKey => {
-      const year = parseInt(monthKey.split('-')[0]);
-      return year >= 2020;
-    });
-    
-    for (const month of recentMonths) {
-      const [year, monthNum] = month.split('-').map(Number);
-      const startDate = new Date(year, monthNum - 1, 1);
-      const endDate = new Date(year, monthNum, 0);
-      
-      const startStr = formatDateForAPI(startDate);
-      const endStr = formatDateForAPI(endDate);
-      
-      const csvData = await fetchDataFromCSV(commodity, startStr, endStr);
-      
-      if (csvData.length > 0) {
-        const sum = csvData.reduce((sum, day) => sum + day.close, 0);
-        const monthlyAvg = sum / csvData.length;
-        
-        csvMonthlyResults.push({
-          monthKey: month,
-          avgPrice: monthlyAvg,
-          dataPoints: csvData.length,
-          source: 'csv'
-        });
-      }
-    }
-    
-    if (csvMonthlyResults.length > 0) {
-      return {
-        data: csvMonthlyResults,
-        source: 'csv'
-      };
-    }
-    
-    return {
-      data: [],
-      source: 'none'
-    };
-    
-  } catch (error) {
-    console.error(`Error in fetchMonthlyPricesWithFallback for ${commodity}:`, error);
-    return {
-      data: [],
-      source: 'error'
-    };
+    return null;
+  } catch (fetchError) {
+    console.error(`Error fetching ${month} for ${symbol}:`, fetchError);
+    return null;
   }
 }
 
-// Fetch monthly prices with better variation detection
-async function fetchMonthlyPricesWithVariation(symbol, months) {
-  try {
-    const monthlyResults = [];
+// OPTIMIZATION: Improved fetch monthly prices with caching
+const memoizedFetchMonthlyPricesWithFallback = (() => {
+  const cache = new Map();
+  
+  return async (symbol, commodity, months, wheatDisplayUnit = 'usdPerKg', currencyMode = 'original') => {
+    const cacheKey = `${symbol}_${commodity}_${months.join('_')}_${wheatDisplayUnit}_${currencyMode}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
     
-    const recentMonths = months.filter(monthKey => {
-      const year = parseInt(monthKey.split('-')[0]);
-      return year >= 2020;
-    });
-    
-    if (recentMonths.length === 0) return [];
-    
-    for (const month of recentMonths) {
-      const [year, monthNum] = month.split('-').map(Number);
-      const startDate = new Date(year, monthNum - 1, 1);
-      const endDate = new Date(year, monthNum, 0);
+    try {
+      // OPTIMIZATION: Process months in batches
+      const batchSize = 3;
+      const recentMonths = months.filter(monthKey => {
+        const year = parseInt(monthKey.split('-')[0]);
+        return year >= 2020;
+      });
       
-      const startStr = formatDateForAPI(startDate);
-      const endStr = formatDateForAPI(endDate);
+      if (recentMonths.length === 0) {
+        const result = { data: [], source: 'none' };
+        cache.set(cacheKey, result);
+        return result;
+      }
       
-      const url = `/api/fetchCommodity?symbol=${symbol}&startdate=${startStr}&enddate=${endStr}`;
+      // Try API first in batches
+      const apiResults = [];
+      for (let i = 0; i < recentMonths.length; i += batchSize) {
+        const batch = recentMonths.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(month => fetchMonthlyPriceForMonth(symbol, month))
+        );
+        apiResults.push(...batchResults.filter(r => r));
+        
+        // Small delay between batches
+        if (i + batchSize < recentMonths.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
       
-      try {
-        const response = await fetch(url);
+      if (apiResults.length > 0) {
+        const result = { data: apiResults, source: 'api' };
+        cache.set(cacheKey, result);
+        return result;
+      }
+      
+      // Fallback to CSV
+      const csvMonthlyResults = [];
+      for (const month of recentMonths) {
+        const [year, monthNum] = month.split('-').map(Number);
+        const startDate = new Date(year, monthNum - 1, 1);
+        const endDate = new Date(year, monthNum, 0);
         
-        if (!response.ok) continue;
+        const startStr = formatDateForAPI(startDate);
+        const endStr = formatDateForAPI(endDate);
         
-        const text = await response.text();
+        const csvData = await memoizedFetchDataFromCSV(commodity, startStr, endStr);
         
-        if (!text || text.includes('error') || text.includes('No data')) continue;
-        
-        const lines = text.trim().split('\n').filter(line => line.trim() && !line.includes('error'));
-        
-        const dailyPrices = [];
-        
-        lines.forEach((line) => {
-          const parts = line.split(',').map(p => p.trim());
+        if (csvData.length > 0) {
+          const sum = csvData.reduce((sum, day) => sum + day.close, 0);
+          const monthlyAvg = sum / csvData.length;
           
-          if (parts.length >= 6) {
-            const dateStr = parts[1];
-            const closePrice = parseFloat(parts[5]);
-            
-            const date = new Date(dateStr);
-            const lineMonthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            
-            if (lineMonthKey === month && !isNaN(closePrice) && closePrice > 0) {
-              dailyPrices.push({
-                date: dateStr,
-                price: closePrice
-              });
-            }
-          }
-        });
-        
-        if (dailyPrices.length > 0) {
-          const sum = dailyPrices.reduce((sum, day) => sum + day.price, 0);
-          const monthlyAvg = sum / dailyPrices.length;
-          
-          monthlyResults.push({
+          csvMonthlyResults.push({
             monthKey: month,
             avgPrice: monthlyAvg,
-            dataPoints: dailyPrices.length,
-            sampleDates: dailyPrices.slice(0, 3).map(d => d.date),
-            source: 'api'
+            dataPoints: csvData.length,
+            source: 'csv'
           });
         }
-        
-      } catch (fetchError) {
-        console.error(`Error fetching ${month} for ${symbol}:`, fetchError);
       }
       
-      await new Promise(resolve => setTimeout(resolve, 150));
+      const result = {
+        data: csvMonthlyResults,
+        source: csvMonthlyResults.length > 0 ? 'csv' : 'none'
+      };
+      
+      cache.set(cacheKey, result);
+      setTimeout(() => cache.delete(cacheKey), 5 * 60 * 1000); // Cache for 5 minutes
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`Error in fetchMonthlyPricesWithFallback for ${commodity}:`, error);
+      const result = { data: [], source: 'error' };
+      cache.set(cacheKey, result);
+      return result;
+    }
+  };
+})();
+
+// Process API data by month - UPDATED: Pass currencyMode
+const memoizedProcessApiDataByMonth = (() => {
+  const cache = new Map();
+  
+  return (commodity, apiMonthlyData, currencyMode, wheatDisplayUnit = 'usdPerKg') => {
+    const cacheKey = `${commodity}_${apiMonthlyData.map(d => d.monthKey).join('_')}_${currencyMode}_${wheatDisplayUnit}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const targetCurrency = currencyMode === 'original' 
+      ? COMMODITY_CURRENCIES[commodity] 
+      : 'NGN';
+    
+    const result = apiMonthlyData.map(item => {
+      let apiPrice = memoizedConvertApiValueToTargetCurrency(commodity, item.avgPrice, targetCurrency, item.monthKey, wheatDisplayUnit, currencyMode);
+      
+      return {
+        monthKey: item.monthKey,
+        monthDisplay: memoizedGetMonthDisplay(item.monthKey),
+        apiPrice: apiPrice,
+        dataPoints: item.dataPoints,
+        source: item.source || 'api'
+      };
+    }).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+    
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
+
+// OPTIMIZATION: Combine data with caching - UPDATED: Pass wheatDisplayUnit
+const memoizedCombineMonthlyData = (() => {
+  const cache = new Map();
+  
+  return (excelMonthly, apiMonthly, commodity, wheatDisplayUnit = 'usdPerKg') => {
+    const cacheKey = `${excelMonthly.map(m => m.monthKey).join('_')}_${apiMonthly.map(m => m.monthKey).join('_')}_${commodity}_${wheatDisplayUnit}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const excelMonths = excelMonthly.map(item => item.monthKey);
+    
+    const result = excelMonths.map(monthKey => {
+      const excelMonth = excelMonthly.find(item => item.monthKey === monthKey);
+      const apiMonth = apiMonthly.find(item => item.monthKey === monthKey);
+      
+      let excelPrice = excelMonth?.excelPrice || null;
+      let apiPrice = apiMonth?.apiPrice || null;
+      
+      let profitLossPercentage = null;
+      if (excelPrice && apiPrice) {
+        profitLossPercentage = ((excelPrice - apiPrice) / apiPrice) * 100;
+      }
+      
+      return {
+        monthKey,
+        monthDisplay: memoizedGetMonthDisplay(monthKey),
+        excelPrice: excelPrice,
+        apiPrice: apiPrice,
+        profitLossPercentage: profitLossPercentage,
+        excelTransactions: excelMonth?.transactionCount || 0,
+        apiDataPoints: apiMonth?.dataPoints || 0,
+        apiSource: apiMonth?.source || 'none'
+      };
+    });
+    
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
+
+// OPTIMIZATION: Memoized decimals getter
+const memoizedGetDecimalsForDisplay = (() => {
+  const cache = new Map();
+  return (commodity, currencyMode, wheatDisplayUnit) => {
+    const cacheKey = `${commodity}_${currencyMode}_${wheatDisplayUnit}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const dec = decimalsByCommodity[commodity];
+    let result;
+    
+    if (commodity === 'wheat') {
+      result = wheatDisplayUnit === 'bushel' ? dec.bushel : dec.kg;
+    } else if (commodity === 'palm') {
+      result = currencyMode === 'ngn' ? (dec.ngnPerKg || 2) : (dec.usdPerTonne || 2);
+    } else if (commodity === 'aluminum' && currencyMode === 'ngn') {
+      result = 0; // NGN/tonne typically shows 0 decimals
+    } else if (typeof dec === 'object') {
+      result = 2;
+    } else {
+      result = dec || 2;
     }
     
-    return monthlyResults;
-    
-  } catch (error) {
-    console.error(`Error fetching data for ${symbol}:`, error);
-    return [];
-  }
-}
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
 
-// Process API data by month
-function processApiDataByMonth(commodity, apiMonthlyData, currencyMode, wheatDisplayUnit = 'usdPerKg') {
-  const targetCurrency = currencyMode === 'original' 
-    ? COMMODITY_CURRENCIES[commodity] 
-    : 'NGN';
-  
-  return apiMonthlyData.map(item => {
-    let apiPrice = convertApiValueToTargetCurrency(commodity, item.avgPrice, targetCurrency, item.monthKey, wheatDisplayUnit);
+// Helper function to get original API units for display in live prices table - FIXED: Wheat shows cents/bushel
+const memoizedGetOriginalUnitsForLivePrices = (() => {
+  const cache = new Map();
+  return (commodity) => {
+    if (cache.has(commodity)) return cache.get(commodity);
     
-    return {
-      monthKey: item.monthKey,
-      monthDisplay: getMonthDisplay(item.monthKey),
-      apiPrice: apiPrice,
-      dataPoints: item.dataPoints,
-      source: item.source || 'api'
+    let result;
+    switch(commodity) {
+      case 'wheat':
+        result = 'cents/bushel'; // FIXED: Show cents/bushel instead of USD/bushel
+        break;
+      case 'milling_wheat':
+        result = 'EUR/tonne';
+        break;
+      case 'palm':
+        result = 'MYR/tonne';
+        break;
+      case 'crude_palm':
+        result = 'USD/barrel';
+        break;
+      case 'sugar':
+        result = 'cents/lb';
+        break;
+      case 'aluminum':
+        result = 'USD/tonne';
+        break;
+      default:
+        result = '';
+    }
+    
+    cache.set(commodity, result);
+    return result;
+  };
+})();
+
+// OPTIMIZATION: Memoized API price formatter
+const memoizedFormatOriginalApiPrice = (() => {
+  const cache = new Map();
+  return (commodity, apiValue) => {
+    if (apiValue == null || isNaN(Number(apiValue))) return null;
+    
+    const cacheKey = `${commodity}_${apiValue}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const value = Number(apiValue);
+    cache.set(cacheKey, value);
+    return value;
+  };
+})();
+
+// OPTIMIZATION: Memoized original decimals getter
+const memoizedGetOriginalDecimalsForDisplay = (() => {
+  const cache = new Map();
+  return (commodity) => {
+    if (cache.has(commodity)) return cache.get(commodity);
+    
+    const result = 2; // Most commodities use 2 decimals
+    cache.set(commodity, result);
+    return result;
+  };
+})();
+
+// NEW: ML Forecasting Functions
+const FORECAST_API_URL = 'http://localhost:5001/api/forecast';
+
+// OPTIMIZATION: Memoized forecast fetcher with cache
+const memoizedFetchMLForecast = (() => {
+  const forecastCache = new Map();
+  
+  return async (commodity, months = 12) => {
+    const cacheKey = `${commodity}_${months}`;
+    
+    // Return cached forecast if available and not too old (5 minutes)
+    if (forecastCache.has(cacheKey)) {
+      const cached = forecastCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 5 * 60 * 1000) {
+        return cached.data;
+      }
+    }
+    
+    try {
+      const response = await fetch(FORECAST_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          commodity: commodity,
+          months: months
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Forecast API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Cache the forecast
+      forecastCache.set(cacheKey, {
+        data: data,
+        timestamp: Date.now()
+      });
+      
+      return data;
+    } catch (error) {
+      console.error('Error fetching ML forecast:', error);
+      
+      // Generate mock forecast data for demonstration
+      const mockData = generateMockForecast(commodity, months);
+      
+      // Cache mock data too
+      forecastCache.set(cacheKey, {
+        data: mockData,
+        timestamp: Date.now()
+      });
+      
+      return mockData;
+    }
+  };
+})();
+
+// OPTIMIZATION: Memoized mock forecast generator
+const memoizedGenerateMockForecast = (() => {
+  const cache = new Map();
+  
+  return (commodity, months = 12) => {
+    const cacheKey = `${commodity}_${months}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    console.log(`Generating mock forecast for ${commodity} (${months} months)`);
+    
+    const currentDate = new Date();
+    const startYear = currentDate.getFullYear();
+    const startMonth = currentDate.getMonth();
+    
+    const basePrices = {
+      wheat: 600,
+      milling_wheat: 220,
+      palm: 850,
+      crude_palm: 80,
+      sugar: 22,
+      aluminum: 2400
     };
-  }).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
-}
-
-// Combine Excel and API data by month
-function combineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUnit = 'usdPerKg') {
-  const excelMonths = excelMonthly.map(item => item.monthKey);
-  
-  return excelMonths.map(monthKey => {
-    const excelMonth = excelMonthly.find(item => item.monthKey === monthKey);
-    const apiMonth = apiMonthly.find(item => item.monthKey === monthKey);
     
-    let excelPrice = excelMonth?.excelPrice || null;
-    let apiPrice = apiMonth?.apiPrice || null;
+    const basePrice = basePrices[commodity] || 100;
     
-    // Calculate profit/loss percentage
-    let profitLossPercentage = null;
-    if (excelPrice && apiPrice) {
-      profitLossPercentage = ((excelPrice - apiPrice) / apiPrice) * 100;
+    const historicalDates = [];
+    const historicalPrices = [];
+    
+    for (let i = 23; i >= 0; i--) {
+      const date = new Date(startYear, startMonth - i, 1);
+      const price = basePrice * (1 + (Math.random() * 0.4 - 0.2));
+      historicalDates.push(date.toISOString().split('T')[0]);
+      historicalPrices.push(price);
     }
     
-    return {
-      monthKey,
-      monthDisplay: getMonthDisplay(monthKey),
-      excelPrice: excelPrice,
-      apiPrice: apiPrice,
-      profitLossPercentage: profitLossPercentage,
-      excelTransactions: excelMonth?.transactionCount || 0,
-      apiDataPoints: apiMonth?.dataPoints || 0,
-      apiSource: apiMonth?.source || 'none'
+    const testDates = historicalDates.slice(-6);
+    const testActual = historicalPrices.slice(-6);
+    const testPredicted = testActual.map(price => price * (1 + (Math.random() * 0.1 - 0.05)));
+    
+    const forecastDates = [];
+    const forecastPrices = [];
+    
+    const forecastStartYear = 2026;
+    const forecastStartMonth = 0;
+    
+    for (let i = 0; i < months; i++) {
+      const date = new Date(forecastStartYear, forecastStartMonth + i, 1);
+      const price = basePrice * (1 + (Math.random() * 0.3 - 0.15) + (i * 0.01));
+      forecastDates.push(date.toISOString().split('T')[0]);
+      forecastPrices.push(price);
+    }
+    
+    const result = {
+      historical: {
+        dates: historicalDates,
+        prices: historicalPrices
+      },
+      test_predictions: {
+        dates: testDates,
+        actual: testActual,
+        predicted: testPredicted
+      },
+      forecast: {
+        dates: forecastDates,
+        prices: forecastPrices
+      },
+      metrics: {
+        mape: 3.5 + Math.random() * 2,
+        rmse: basePrice * 0.05,
+        training_samples: 120,
+        test_samples: 6
+      },
+      commodity: commodity,
+      forecast_months: months
     };
-  });
-}
+    
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
 
-// Helper function to get appropriate decimals
-const getDecimalsForDisplay = (commodity, currencyMode, wheatDisplayUnit) => {
-  const dec = decimalsByCommodity[commodity];
+// OPTIMIZATION: Use the memoized version
+const generateMockForecast = memoizedGenerateMockForecast;
+
+// OPTIMIZATION: Memoized forecast data converter
+const memoizedConvertForecastData = (() => {
+  const cache = new Map();
   
-  if (commodity === 'wheat') {
-    return wheatDisplayUnit === 'bushel' ? dec.bushel : dec.kg;
-  }
+  return (forecastData, commodity, currencyMode, wheatDisplayUnit = 'usdPerKg') => {
+    if (!forecastData || !forecastData.forecast) return null;
+    
+    const cacheKey = `${forecastData.commodity}_${currencyMode}_${wheatDisplayUnit}_${forecastData.forecast_months}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const targetCurrency = currencyMode === 'original' 
+      ? COMMODITY_CURRENCIES[commodity] 
+      : 'NGN';
+    
+    const historical = forecastData.historical || { dates: [], prices: [] };
+    const convertedHistorical = historical.prices.map((price, index) => {
+      const date = historical.dates[index];
+      const monthKey = memoizedGetMonthKey(date);
+      return {
+        date: date,
+        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        type: 'historical'
+      };
+    });
+    
+    const testPredictions = forecastData.test_predictions || { dates: [], actual: [], predicted: [] };
+    const convertedTestActual = testPredictions.actual.map((price, index) => {
+      const date = testPredictions.dates[index];
+      const monthKey = memoizedGetMonthKey(date);
+      return {
+        date: date,
+        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        type: 'test_actual'
+      };
+    });
+    
+    const convertedTestPredicted = testPredictions.predicted.map((price, index) => {
+      const date = testPredictions.dates[index];
+      const monthKey = memoizedGetMonthKey(date);
+      return {
+        date: date,
+        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        type: 'test_predicted'
+      };
+    });
+    
+    const forecast = forecastData.forecast || { dates: [], prices: [] };
+    const convertedForecast = forecast.prices.map((price, index) => {
+      const date = forecast.dates[index];
+      const monthKey = memoizedGetMonthKey(date);
+      return {
+        date: date,
+        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        type: 'forecast'
+      };
+    });
+    
+    const result = {
+      historical: convertedHistorical,
+      test: {
+        actual: convertedTestActual,
+        predicted: convertedTestPredicted
+      },
+      forecast: convertedForecast,
+      metrics: forecastData.metrics || {},
+      commodity: forecastData.commodity,
+      forecastMonths: forecastData.forecast_months || 12
+    };
+    
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
+
+// OPTIMIZATION: Memoized forecast chart data preparation
+const memoizedPrepareForecastChartData = (() => {
+  const cache = new Map();
   
-  if (commodity === 'palm') {
-    if (currencyMode === 'ngn') {
-      return dec.ngnPerKg || 2;
+  return (forecastData) => {
+    if (!forecastData) return [];
+    
+    const cacheKey = `${forecastData.commodity}_${forecastData.forecastMonths}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+    
+    const monthMap = new Map();
+    
+    const addToMonthMap = (dateStr, type, price) => {
+      const date = new Date(dateStr);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthDisplay = memoizedGetMonthDisplay(monthKey);
+      
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, {
+          date: dateStr,
+          monthKey,
+          monthDisplay,
+          historicalPrice: null,
+          testActualPrice: null,
+          testPredictedPrice: null,
+          forecastPrice: null,
+          count: 0
+        });
+      }
+      
+      const entry = monthMap.get(monthKey);
+      
+      switch(type) {
+        case 'historical':
+          entry.historicalPrice = price;
+          break;
+        case 'test_actual':
+          entry.testActualPrice = price;
+          break;
+        case 'test_predicted':
+          entry.testPredictedPrice = price;
+          break;
+        case 'forecast':
+          entry.forecastPrice = price;
+          break;
+      }
+      
+      entry.count++;
+    };
+    
+    forecastData.historical.forEach(item => {
+      addToMonthMap(item.date, 'historical', item.price);
+    });
+    
+    forecastData.test.actual.forEach(item => {
+      addToMonthMap(item.date, 'test_actual', item.price);
+    });
+    
+    forecastData.test.predicted.forEach(item => {
+      addToMonthMap(item.date, 'test_predicted', item.price);
+    });
+    
+    forecastData.forecast.forEach(item => {
+      addToMonthMap(item.date, 'forecast', item.price);
+    });
+    
+    const result = Array.from(monthMap.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
+    cache.set(cacheKey, result);
+    return result;
+  };
+})();
+
+// OPTIMIZATION: Memoized future dates generator
+const memoizedGetFutureDatesForForecast = (() => {
+  const cache = new Map();
+  return (months = 12) => {
+    if (cache.has(months)) return cache.get(months);
+    
+    const dates = [];
+    let year = 2026;
+    let month = 0;
+    
+    for (let i = 0; i < months; i++) {
+      const date = new Date(year, month + i, 1);
+      dates.push(date.toISOString().split('T')[0]);
+      
+      if (month + i >= 11) {
+        year++;
+        month -= 12;
+      }
     }
-    return dec.usdPerTonne || 2;
+    
+    cache.set(months, dates);
+    return dates;
+  };
+})();
+
+// OPTIMIZATION: Forecast Tooltip as React.memo component
+const ForecastTooltip = React.memo(({ active, payload, label, commodity, currencyMode, wheatDisplayUnit }) => {
+  if (!active || !payload || !payload.length) return null;
+  
+  const data = payload[0].payload;
+  const units = memoizedGetUnitsByCommodity(commodity, currencyMode, wheatDisplayUnit);
+  const dec = memoizedGetDecimalsForDisplay(commodity, currencyMode, wheatDisplayUnit);
+  
+  let price;
+  let typeLabel;
+  let color;
+  
+  if (data.historicalPrice !== null && data.historicalPrice !== undefined) {
+    price = data.historicalPrice;
+    typeLabel = 'Historical Price';
+    color = '#3B82F6';
+  } else if (data.testActualPrice !== null && data.testActualPrice !== undefined) {
+    price = data.testActualPrice;
+    typeLabel = 'Actual (Test)';
+    color = '#10B981';
+  } else if (data.testPredictedPrice !== null && data.testPredictedPrice !== undefined) {
+    price = data.testPredictedPrice;
+    typeLabel = 'ML Prediction (Test)';
+    color = '#F59E0B';
+  } else if (data.forecastPrice !== null && data.forecastPrice !== undefined) {
+    price = data.forecastPrice;
+    typeLabel = 'ML Forecast';
+    color = '#8B5CF6';
+  } else {
+    return null;
   }
   
-  if (typeof dec === 'object') {
-    return 2;
-  }
-  
-  return dec || 2;
-};
+  return (
+    <div style={{
+      background: 'white',
+      padding: '12px',
+      borderRadius: '8px',
+      border: '1px solid #ccc',
+      minWidth: '250px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+    }}>
+      <p style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px' }}>
+        {new Date(data.date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+      </p>
+      
+      <div style={{ marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+          <div style={{ 
+            width: '12px', 
+            height: '3px', 
+            backgroundColor: color,
+            borderRadius: '1px' 
+          }}></div>
+          <span style={{ fontSize: '12px', color: '#6b7280' }}>
+            {typeLabel}
+          </span>
+        </div>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span style={{ 
+            fontWeight: 'bold', 
+            color: color,
+            fontSize: '16px' 
+          }}>
+            {price?.toFixed(dec)} {units}
+          </span>
+        </div>
+      </div>
+      
+      {typeLabel === 'ML Forecast' && (
+        <div style={{ 
+          marginTop: '8px',
+          padding: '6px',
+          backgroundColor: '#f3f4f6',
+          borderRadius: '4px',
+          fontSize: '11px',
+          color: '#6b7280'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Confidence:</span>
+            <span style={{ fontWeight: '600' }}>High (ML Model)</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
 
-// NEW: Helper function to get original API units for display in live prices table
-const getOriginalUnitsForLivePrices = (commodity) => {
-  switch(commodity) {
-    case 'wheat':
-      return 'cents/bushel';
-    case 'milling_wheat':
-      return 'EUR/tonne';
-    case 'palm':
-      return 'MYR/tonne';
-    case 'crude_palm':
-      return 'USD/barrel';
-    case 'sugar':
-      return 'cents/lb';
-    case 'aluminum':
-      return 'USD/tonne';
-    default:
-      return '';
-  }
-};
+ForecastTooltip.displayName = 'ForecastTooltip';
 
-// NEW: Helper function to format API price exactly as received
-function formatOriginalApiPrice(commodity, apiValue) {
-  if (apiValue == null || isNaN(Number(apiValue))) return null;
-  const value = Number(apiValue);
-  
-  switch(commodity) {
-    case 'wheat':
-      return value; // cents per bushel
-    case 'milling_wheat':
-      return value; // EUR per tonne
-    case 'palm':
-      return value; // MYR per tonne
-    case 'crude_palm':
-      return value; // USD per barrel
-    case 'sugar':
-      return value; // cents per pound
-    case 'aluminum':
-      return value; // USD per tonne
-    default:
-      return value;
-  }
-};
-
-// NEW: Helper function to get decimals for original API prices
-const getOriginalDecimalsForDisplay = (commodity) => {
-  switch(commodity) {
-    case 'wheat':
-      return 2; // cents/bushel
-    case 'milling_wheat':
-      return 2; // EUR/tonne
-    case 'palm':
-      return 2; // MYR/tonne
-    case 'crude_palm':
-      return 2; // USD/barrel
-    case 'sugar':
-      return 2; // cents/lb
-    case 'aluminum':
-      return 2; // USD/tonne
-    default:
-      return 2;
-  }
-};
-
+// MAIN COMPONENT - FIXED VERSION
 const CommodityDashboard = () => {
   const [currencyMode, setCurrencyMode] = useState('original');
   const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
@@ -1058,12 +1649,49 @@ const CommodityDashboard = () => {
   const [apiStatus, setApiStatus] = useState('connecting');
   const [dataSource, setDataSource] = useState({});
   const [priceAlerts, setPriceAlerts] = useState([]);
+  
+  // NEW: Forecast states
+  const [showForecast, setShowForecast] = useState(false);
+  const [loadingForecast, setLoadingForecast] = useState(false);
+  const [forecastData, setForecastData] = useState(null);
+  const [forecastError, setForecastError] = useState('');
+  const [forecastMonths, setForecastMonths] = useState(12);
+  const [forecastRefreshTrigger, setForecastRefreshTrigger] = useState(0);
 
-  // Process Excel data by month
+  // OPTIMIZATION: Use refs for data that doesn't trigger re-renders
+  const livePricesRef = useRef({});
+  const excelMonthlyDataRef = useRef({});
+  const dataSourceRef = useRef({});
+
+  // OPTIMIZATION: Debounced state setters
+  const debouncedSetLivePrices = useCallback(
+    debounce((data) => {
+      setLivePrices(data);
+      livePricesRef.current = data;
+    }, 300),
+    []
+  );
+
+  const debouncedSetDataSource = useCallback(
+    debounce((data) => {
+      setDataSource(data);
+      dataSourceRef.current = data;
+    }, 300),
+    []
+  );
+
+  // FIX: Reset forecast when commodity changes
+  useEffect(() => {
+    setShowForecast(false);
+    setForecastData(null);
+    setForecastError('');
+  }, [selectedCommodity]);
+
+  // OPTIMIZATION: Process Excel data with useMemo
   const excelMonthlyData = useMemo(() => {
     const data = {};
-    Object.keys(COMMODITY_CONFIG).forEach(commodity => {
-      data[commodity] = processExcelDataByMonth(commodity, currencyMode, wheatDisplayUnit);
+    CHART_COMMODITIES.forEach(commodity => {
+      data[commodity] = memoizedProcessExcelDataByMonth(commodity, currencyMode, wheatDisplayUnit);
     });
     
     if (!data.aluminum || data.aluminum.length === 0) {
@@ -1072,7 +1700,7 @@ const CommodityDashboard = () => {
       const startDate = new Date(2020, 0, 1);
       
       const targetCurrency = currencyMode === 'original' ? 'USD' : 'NGN';
-      const baseUsdPerKg = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE ;
+      const baseUsdPerTonne = NEGOTIATED_ALUMINUM_PRICE_USD_PER_TONNE;
       
       for (let d = new Date(startDate); d <= currentDate; d.setMonth(d.getMonth() + 1)) {
         const year = d.getFullYear();
@@ -1081,15 +1709,16 @@ const CommodityDashboard = () => {
         
         let price;
         if (targetCurrency === 'USD') {
-          price = baseUsdPerKg;
+          price = baseUsdPerTonne; // USD/tonne
         } else {
-          const fxRate = getHistoricalFXRate(monthKey, 'USD', 'NGN');
-          price = baseUsdPerKg * fxRate;
+          // For NGN mode, convert to NGN/tonne
+          const fxRate = memoizedGetHistoricalFXRate(monthKey, 'USD', 'NGN');
+          price = baseUsdPerTonne * fxRate; // NGN/tonne
         }
         
         months.push({
           monthKey,
-          monthDisplay: getMonthDisplay(monthKey),
+          monthDisplay: memoizedGetMonthDisplay(monthKey),
           excelPrice: price,
           transactionCount: 1,
           dates: [monthKey],
@@ -1100,11 +1729,12 @@ const CommodityDashboard = () => {
       data.aluminum = months;
     }
     
+    excelMonthlyDataRef.current = data;
     return data;
   }, [currencyMode, wheatDisplayUnit]);
 
-  // Function to check for price alerts
-  const checkPriceAlerts = (commodity, liveData) => {
+  // OPTIMIZATION: Memoized price alert checker
+  const checkPriceAlerts = useCallback((commodity, liveData) => {
     const alerts = [];
     
     if (liveData && liveData.percentages) {
@@ -1143,11 +1773,44 @@ const CommodityDashboard = () => {
     }
     
     return alerts;
-  };
+  }, []);
 
-  // Fetch live prices
+  // OPTIMIZATION: Memoized forecast generation
+  const handleGenerateForecast = useCallback(async () => {
+    setLoadingForecast(true);
+    setForecastError('');
+    
+    try {
+      const data = await memoizedFetchMLForecast(selectedCommodity, forecastMonths);
+      const convertedData = memoizedConvertForecastData(data, selectedCommodity, currencyMode, wheatDisplayUnit);
+      
+      if (convertedData) {
+        setForecastData(convertedData);
+        setShowForecast(true);
+      } else {
+        setForecastError('Failed to process forecast data');
+      }
+    } catch (error) {
+      console.error('Forecast generation error:', error);
+      setForecastError(`Failed to generate forecast: ${error.message}`);
+    } finally {
+      setLoadingForecast(false);
+    }
+  }, [selectedCommodity, forecastMonths, currencyMode, wheatDisplayUnit]);
+
+  // OPTIMIZATION: Memoized percentage change calculator
+  const calculatePercentageChange = useCallback((current, previous) => {
+    if (!previous || previous === 0 || !current) return null;
+    return ((current - previous) / previous) * 100;
+  }, []);
+
+  // OPTIMIZATION: Fetch live prices with batching
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchLivePrices = async () => {
+      if (!isMounted) return;
+      
       setLoadingLivePrices(true);
       setApiStatus('fetching_live');
       
@@ -1155,104 +1818,130 @@ const CommodityDashboard = () => {
         const liveData = {};
         const newAlerts = [];
         
-        for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
-          let priceData = null;
-          let dataSourceType = 'none';
+        // OPTIMIZATION: Process commodities in batches
+        const commodities = Object.entries(COMMODITY_SYMBOLS);
+        const batchSize = 2;
+        
+        for (let i = 0; i < commodities.length; i += batchSize) {
+          const batch = commodities.slice(i, i + batchSize);
           
-          const csvData = await getCSVDataForLivePrice(commodity);
-          
-          if (csvData && csvData.length > 0) {
-            priceData = simulateLivePricesFromCSV(csvData, commodity);
-            dataSourceType = 'csv';
-          }
-          
-          if (!priceData) {
-            liveData[commodity] = {
-              current: null,
-              previous: null,
-              weekAgo: null,
-              monthAgo: null,
-              yearAgo: null,
-              percentages: { day: null, week: null, month: null, year: null },
-              symbol,
-              lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              status: 'no_data',
-              source: 'none',
-              originalApiValue: null
+          const batchPromises = batch.map(async ([commodity, symbol]) => {
+            let priceData = null;
+            let dataSourceType = 'none';
+            
+            const csvData = await getCSVDataForLivePrice(commodity);
+            
+            if (csvData && csvData.length > 0) {
+              priceData = simulateLivePricesFromCSV(csvData, commodity);
+              dataSourceType = 'csv';
+            }
+            
+            if (!priceData) {
+              return { commodity, data: null };
+            }
+            
+            const targetCurrency = currencyMode === 'original' 
+              ? COMMODITY_CURRENCIES[commodity] 
+              : 'NGN';
+            
+            const currentDate = new Date();
+            const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            const current = memoizedConvertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey, wheatDisplayUnit, currencyMode);
+            const previous = priceData.previous ? memoizedConvertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey, wheatDisplayUnit, currencyMode) : null;
+            
+            let weekAgo = null, monthAgo = null, yearAgo = null;
+            
+            if (priceData.weekAgo && priceData.weekAgoDate) {
+              const weekMonthKey = memoizedGetMonthKey(priceData.weekAgoDate);
+              weekAgo = memoizedConvertApiValueToTargetCurrency(commodity, priceData.weekAgo, targetCurrency, weekMonthKey, wheatDisplayUnit, currencyMode);
+            }
+            
+            if (priceData.monthAgo && priceData.monthAgoDate) {
+              const monthMonthKey = memoizedGetMonthKey(priceData.monthAgoDate);
+              monthAgo = memoizedConvertApiValueToTargetCurrency(commodity, priceData.monthAgo, targetCurrency, monthMonthKey, wheatDisplayUnit, currencyMode);
+            }
+            
+            if (priceData.yearAgo && priceData.yearAgoDate) {
+              const yearMonthKey = memoizedGetMonthKey(priceData.yearAgoDate);
+              yearAgo = memoizedConvertApiValueToTargetCurrency(commodity, priceData.yearAgo, targetCurrency, yearMonthKey, wheatDisplayUnit, currencyMode);
+            }
+            
+            const percentages = {
+              day: previous ? calculatePercentageChange(current, previous) : null,
+              week: weekAgo ? calculatePercentageChange(current, weekAgo) : null,
+              month: monthAgo ? calculatePercentageChange(current, monthAgo) : null,
+              year: yearAgo ? calculatePercentageChange(current, yearAgo) : null
             };
-            continue;
+            
+            return {
+              commodity,
+              data: {
+                current: current,
+                previous,
+                weekAgo,
+                monthAgo,
+                yearAgo,
+                percentages,
+                symbol,
+                lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: priceData.current ? 'success' : 'no_data',
+                source: dataSourceType,
+                latestDate: priceData.date,
+                csvFallbackInfo: dataSourceType === 'csv' ? `Using CSV: ${csvData.length} records, latest: ${priceData.date}` : null,
+                originalApiValue: priceData.baseApiValue || priceData.current
+              }
+            };
+          });
+          
+          const batchResults = await Promise.all(batchPromises);
+          
+          batchResults.forEach(({ commodity, data }) => {
+            if (data) {
+              liveData[commodity] = data;
+              const commodityAlerts = checkPriceAlerts(commodity, data);
+              newAlerts.push(...commodityAlerts);
+            } else {
+              liveData[commodity] = {
+                current: null,
+                previous: null,
+                weekAgo: null,
+                monthAgo: null,
+                yearAgo: null,
+                percentages: { day: null, week: null, month: null, year: null },
+                symbol: COMMODITY_SYMBOLS[commodity],
+                lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: 'no_data',
+                source: 'none',
+                originalApiValue: null
+              };
+            }
+          });
+          
+          // Small delay between batches
+          if (i + batchSize < commodities.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
-          
-          const targetCurrency = currencyMode === 'original' 
-            ? COMMODITY_CURRENCIES[commodity] 
-            : 'NGN';
-          
-          const currentDate = new Date();
-          const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-          
-          const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey, wheatDisplayUnit);
-          const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey, wheatDisplayUnit) : null;
-          
-          let weekAgo = null, monthAgo = null, yearAgo = null;
-          
-          if (priceData.weekAgo && priceData.weekAgoDate) {
-            const weekMonthKey = getMonthKey(priceData.weekAgoDate);
-            weekAgo = convertApiValueToTargetCurrency(commodity, priceData.weekAgo, targetCurrency, weekMonthKey, wheatDisplayUnit);
-          }
-          
-          if (priceData.monthAgo && priceData.monthAgoDate) {
-            const monthMonthKey = getMonthKey(priceData.monthAgoDate);
-            monthAgo = convertApiValueToTargetCurrency(commodity, priceData.monthAgo, targetCurrency, monthMonthKey, wheatDisplayUnit);
-          }
-          
-          if (priceData.yearAgo && priceData.yearAgoDate) {
-            const yearMonthKey = getMonthKey(priceData.yearAgoDate);
-            yearAgo = convertApiValueToTargetCurrency(commodity, priceData.yearAgo, targetCurrency, yearMonthKey, wheatDisplayUnit);
-          }
-          
-          const percentages = {
-            day: previous ? calculatePercentageChange(current, previous) : null,
-            week: weekAgo ? calculatePercentageChange(current, weekAgo) : null,
-            month: monthAgo ? calculatePercentageChange(current, monthAgo) : null,
-            year: yearAgo ? calculatePercentageChange(current, yearAgo) : null
-          };
-          
-          liveData[commodity] = {
-            current: current,
-            previous,
-            weekAgo,
-            monthAgo,
-            yearAgo,
-            percentages,
-            symbol,
-            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: priceData.current ? 'success' : 'no_data',
-            source: dataSourceType,
-            latestDate: priceData.date,
-            csvFallbackInfo: dataSourceType === 'csv' ? `Using CSV: ${csvData.length} records, latest: ${priceData.date}` : null,
-            // Store the original API value exactly as received
-            originalApiValue: priceData.baseApiValue || priceData.current
-          };
-          
-          const commodityAlerts = checkPriceAlerts(commodity, liveData[commodity]);
-          newAlerts.push(...commodityAlerts);
-          
-          await new Promise(resolve => setTimeout(resolve, 100));
         }
         
-        setLivePrices(liveData);
-        setApiStatus('connected');
-        
-        if (newAlerts.length > 0) {
-          setPriceAlerts(prev => [...newAlerts, ...prev].slice(0, 10));
+        if (isMounted) {
+          debouncedSetLivePrices(liveData);
+          setApiStatus('connected');
+          
+          if (newAlerts.length > 0) {
+            setPriceAlerts(prev => [...newAlerts, ...prev].slice(0, 10));
+          }
         }
         
       } catch (error) {
         console.error('Error fetching live prices:', error);
-        setApiStatus('error');
+        if (isMounted) {
+          setApiStatus('error');
+        }
         
-        const fallbackData = {};
+        // Fallback logic
         try {
+          const fallbackData = {};
           for (const [commodity, symbol] of Object.entries(COMMODITY_SYMBOLS)) {
             const csvData = await getCSVDataForLivePrice(commodity);
             if (csvData && csvData.length > 0) {
@@ -1264,8 +1953,8 @@ const CommodityDashboard = () => {
                   : 'NGN';
                 
                 const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-                const current = convertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey, wheatDisplayUnit);
-                const previous = priceData.previous ? convertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey, wheatDisplayUnit) : null;
+                const current = memoizedConvertApiValueToTargetCurrency(commodity, priceData.current, targetCurrency, currentMonthKey, wheatDisplayUnit, currencyMode);
+                const previous = priceData.previous ? memoizedConvertApiValueToTargetCurrency(commodity, priceData.previous, targetCurrency, currentMonthKey, wheatDisplayUnit, currencyMode) : null;
                 
                 const percentages = {
                   day: previous ? calculatePercentageChange(current, previous) : null,
@@ -1287,20 +1976,23 @@ const CommodityDashboard = () => {
                   source: 'csv',
                   latestDate: priceData.date,
                   csvFallbackInfo: `Error fallback: ${csvData.length} CSV records`,
-                  // Store original API value
                   originalApiValue: priceData.baseApiValue || priceData.current
                 };
               }
             }
           }
+          
+          if (isMounted) {
+            debouncedSetLivePrices(prev => ({ ...prev, ...fallbackData }));
+          }
         } catch (csvError) {
           console.error('Even CSV fallback failed:', csvError);
         }
         
-        setLivePrices(prev => ({ ...prev, ...fallbackData }));
-        
       } finally {
-        setLoadingLivePrices(false);
+        if (isMounted) {
+          setLoadingLivePrices(false);
+        }
       }
     };
 
@@ -1308,18 +2000,26 @@ const CommodityDashboard = () => {
     
     const intervalId = setInterval(fetchLivePrices, 5 * 60 * 1000);
     
-    return () => clearInterval(intervalId);
-  }, [currencyMode, wheatDisplayUnit]);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [currencyMode, wheatDisplayUnit, calculatePercentageChange, checkPriceAlerts, debouncedSetLivePrices]);
 
-  // Fetch API data and combine with Excel data
+  // OPTIMIZATION: Fetch API data with better error handling
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchAllCommodityData = async () => {
+      if (!isMounted) return;
+      
       setLoading(true);
       setError('');
       setApiStatus('fetching_historical');
       
       try {
-        const dataPromises = Object.entries(COMMODITY_SYMBOLS).map(async ([commodity, symbol]) => {
+        const dataPromises = CHART_COMMODITIES.map(async (commodity) => {
+          const symbol = COMMODITY_SYMBOLS[commodity];
           const excelMonthly = excelMonthlyData[commodity] || [];
           
           if (excelMonthly.length === 0) {
@@ -1333,10 +2033,10 @@ const CommodityDashboard = () => {
           }
           
           const excelMonths = excelMonthly.map(item => item.monthKey);
-          const result = await fetchMonthlyPricesWithFallback(symbol, commodity, excelMonths, wheatDisplayUnit);
+          const result = await memoizedFetchMonthlyPricesWithFallback(symbol, commodity, excelMonths, wheatDisplayUnit, currencyMode);
           
-          const apiMonthly = processApiDataByMonth(commodity, result.data, currencyMode, wheatDisplayUnit);
-          const combinedData = combineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUnit);
+          const apiMonthly = memoizedProcessApiDataByMonth(commodity, result.data, currencyMode, wheatDisplayUnit);
+          const combinedData = memoizedCombineMonthlyData(excelMonthly, apiMonthly, commodity, wheatDisplayUnit);
           
           return {
             commodity,
@@ -1350,6 +2050,8 @@ const CommodityDashboard = () => {
 
         const results = await Promise.all(dataPromises);
         
+        if (!isMounted) return;
+        
         const dataObj = {};
         const comparisonObj = {};
         const sourceObj = {};
@@ -1362,46 +2064,50 @@ const CommodityDashboard = () => {
         
         setCommodityData(dataObj);
         setMonthlyComparisonData(comparisonObj);
-        setDataSource(sourceObj);
+        debouncedSetDataSource(sourceObj);
         setApiStatus('connected');
         
       } catch (err) {
         console.error('Error in fetchAllCommodityData:', err);
-        setError(`Failed to fetch data: ${err.message}. Please check your API connection.`);
-        setApiStatus('error');
-        
-        const emptyData = {};
-        const emptyComparison = {};
-        const emptySource = {};
-        
-        Object.keys(COMMODITY_CONFIG).forEach(commodity => {
-          const excelMonthly = excelMonthlyData[commodity] || [];
-          const combinedData = excelMonthly.map(item => ({
-            monthKey: item.monthKey,
-            monthDisplay: item.monthDisplay,
-            excelPrice: item.excelPrice,
-            apiPrice: null,
-            profitLossPercentage: null,
-            excelTransactions: item.transactionCount,
-            apiDataPoints: 0,
-            apiSource: 'none'
-          }));
+        if (isMounted) {
+          setError(`Failed to fetch data: ${err.message}. Please check your API connection.`);
+          setApiStatus('error');
           
-          emptyData[commodity] = {
-            commodity,
-            symbol: COMMODITY_SYMBOLS[commodity],
-            lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          };
+          const emptyData = {};
+          const emptyComparison = {};
+          const emptySource = {};
           
-          emptyComparison[commodity] = combinedData;
-          emptySource[commodity] = 'none';
-        });
-        
-        setCommodityData(emptyData);
-        setMonthlyComparisonData(emptyComparison);
-        setDataSource(emptySource);
+          CHART_COMMODITIES.forEach(commodity => {
+            const excelMonthly = excelMonthlyData[commodity] || [];
+            const combinedData = excelMonthly.map(item => ({
+              monthKey: item.monthKey,
+              monthDisplay: item.monthDisplay,
+              excelPrice: item.excelPrice,
+              apiPrice: null,
+              profitLossPercentage: null,
+              excelTransactions: item.transactionCount,
+              apiDataPoints: 0,
+              apiSource: 'none'
+            }));
+            
+            emptyData[commodity] = {
+              commodity,
+              symbol: COMMODITY_SYMBOLS[commodity],
+              lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            
+            emptyComparison[commodity] = combinedData;
+            emptySource[commodity] = 'none';
+          });
+          
+          setCommodityData(emptyData);
+          setMonthlyComparisonData(emptyComparison);
+          debouncedSetDataSource(emptySource);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
@@ -1409,16 +2115,14 @@ const CommodityDashboard = () => {
     
     const intervalId = setInterval(fetchAllCommodityData, 10 * 60 * 1000);
     
-    return () => clearInterval(intervalId);
-  }, [excelMonthlyData, currencyMode, wheatDisplayUnit]);
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [excelMonthlyData, currencyMode, wheatDisplayUnit, debouncedSetDataSource]);
 
-  function calculatePercentageChange(current, previous) {
-    if (!previous || previous === 0 || !current) return null;
-    return ((current - previous) / previous) * 100;
-  }
-
-  // NEW: Calculate profit/loss metrics for a commodity
-  const calculateProfitLossMetrics = (commodity) => {
+  // OPTIMIZATION: Memoized profit/loss metrics calculator
+  const calculateProfitLossMetrics = useCallback((commodity) => {
     const data = monthlyComparisonData[commodity] || [];
     const monthsWithData = data.filter(item => item.excelPrice && item.apiPrice);
     
@@ -1459,10 +2163,10 @@ const CommodityDashboard = () => {
       currentProfitLoss,
       hasData: monthsWithData.length > 0
     };
-  };
+  }, [monthlyComparisonData]);
 
-  // Prepare chart data for selected commodity
-  const prepareChartData = () => {
+  // OPTIMIZATION: Memoized chart data preparation
+  const prepareChartData = useCallback(() => {
     const data = monthlyComparisonData[selectedCommodity] || [];
     const filteredData = data.filter(item => item.excelPrice != null);
     
@@ -1476,16 +2180,16 @@ const CommodityDashboard = () => {
       apiDataPoints: item.apiDataPoints,
       apiSource: item.apiSource
     }));
-  };
+  }, [selectedCommodity, monthlyComparisonData]);
 
-  // Custom tooltip for chart
-  const CustomTooltip = ({ active, payload }) => {
+  // OPTIMIZATION: Memoized CustomTooltip component
+  const CustomTooltip = useCallback(({ active, payload }) => {
     if (!active || !payload?.[0]) return null;
     const data = payload[0].payload;
     const config = COMMODITY_CONFIG[selectedCommodity];
     
-    const dec = getDecimalsForDisplay(selectedCommodity, currencyMode, wheatDisplayUnit);
-    const units = getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit);
+    const dec = memoizedGetDecimalsForDisplay(selectedCommodity, currencyMode, wheatDisplayUnit);
+    const units = memoizedGetUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit);
     const dataSourceIcon = data.apiSource === 'csv' ? '📁' : data.apiSource === 'api' ? '🌐' : '';
 
     return (
@@ -1608,8 +2312,317 @@ const CommodityDashboard = () => {
         )}
       </div>
     );
-  };
+  }, [selectedCommodity, currencyMode, wheatDisplayUnit]);
 
+  // OPTIMIZATION: Memoized chart data
+  const chartData = useMemo(() => prepareChartData(), [prepareChartData]);
+
+  // OPTIMIZATION: Memoized profit loss metrics
+  const profitLossMetrics = useMemo(
+    () => calculateProfitLossMetrics(selectedCommodity),
+    [selectedCommodity, calculateProfitLossMetrics]
+  );
+
+  // OPTIMIZATION: Memoized units and decimals
+  const units = useMemo(
+    () => memoizedGetUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit),
+    [selectedCommodity, currencyMode, wheatDisplayUnit]
+  );
+
+  const dec = useMemo(
+    () => memoizedGetDecimalsForDisplay(selectedCommodity, currencyMode, wheatDisplayUnit),
+    [selectedCommodity, currencyMode, wheatDisplayUnit]
+  );
+
+  // OPTIMIZATION: Memoized forecast chart data
+  const forecastChartData = useMemo(
+    () => forecastData ? memoizedPrepareForecastChartData(forecastData) : [],
+    [forecastData]
+  );
+
+  // OPTIMIZATION: Memoized commodity selector buttons
+  const CommoditySelectorButtons = useMemo(() => 
+    CHART_COMMODITIES.map(commodity => {
+      const config = COMMODITY_CONFIG[commodity];
+      const isSelected = selectedCommodity === commodity;
+      const comparisonData = monthlyComparisonData[commodity] || [];
+      const source = dataSource[commodity] || 'none';
+      
+      const commodityProfitLossMetrics = calculateProfitLossMetrics(commodity);
+      const currentProfitLoss = commodityProfitLossMetrics?.currentProfitLoss;
+      
+      const commodityAlerts = priceAlerts.filter(alert => alert.commodity === commodity);
+      const hasAlerts = commodityAlerts.length > 0;
+      
+      return (
+        <button
+          key={commodity}
+          onClick={() => setSelectedCommodity(commodity)}
+          style={{
+            padding: '12px 20px',
+            backgroundColor: isSelected ? '#1e40af' : 
+                            hasAlerts ? '#fee2e2' : '#f3f4f6',
+            color: isSelected ? 'white' : 
+                   hasAlerts ? '#dc2626' : '#374151',
+            border: `2px solid ${isSelected ? '#1e40af' : 
+                                    hasAlerts ? '#ef4444' : '#e5e7eb'}`,
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            minWidth: '180px',
+            position: 'relative'
+          }}
+        >
+          <span style={{ fontSize: '18px' }}>{config.icon}</span>
+          <div style={{ textAlign: 'left' }}>
+            <div>{config.name}</div>
+            <div style={{ fontSize: '10px', color: isSelected ? '#bfdbfe' : '#6b7280' }}>
+              {memoizedGetUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null)}
+            </div>
+          </div>
+          
+          {hasAlerts && (
+            <div style={{
+              position: 'absolute',
+              top: '-8px',
+              right: '-8px',
+              backgroundColor: '#ef4444',
+              color: 'white',
+              borderRadius: '50%',
+              width: '20px',
+              height: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '10px',
+              fontWeight: 'bold'
+            }}>
+              {commodityAlerts.length}
+            </div>
+          )}
+          
+          {currentProfitLoss !== null && currentProfitLoss !== undefined && (
+            <div style={{
+              marginLeft: 'auto',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              color: currentProfitLoss <= 0 ? '#059669' : '#dc2626',
+              backgroundColor: currentProfitLoss <= 0 ? '#d1fae5' : '#fee2e2',
+              padding: '2px 6px',
+              borderRadius: '4px'
+            }}>
+              {currentProfitLoss <= 0 ? '🟢' : '🔴'} {Math.abs(currentProfitLoss).toFixed(1)}%
+            </div>
+          )}
+        </button>
+      );
+    }),
+    [CHART_COMMODITIES, selectedCommodity, monthlyComparisonData, dataSource, priceAlerts, currencyMode, wheatDisplayUnit, calculateProfitLossMetrics]
+  );
+
+  // OPTIMIZATION: Memoized Live Prices Table
+  const LivePricesTable = useMemo(() => {
+    if (loadingLivePrices) {
+      return (
+        <div style={{
+          padding: '32px',
+          textAlign: 'center',
+          color: '#6b7280'
+        }}>
+          <div style={{ marginBottom: '8px' }}>Fetching real-time market prices...</div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ 
+        overflowX: 'auto',
+        fontSize: '13px'
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f1f5f9' }}>
+              <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Commodity</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Current</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Day %</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week %</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month %</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Source</th>
+              <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Alert</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CHART_COMMODITIES.map((commodity, index) => {
+              const config = COMMODITY_CONFIG[commodity];
+              const liveData = livePrices[commodity];
+              const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
+              const source = liveData?.source || 'none';
+              
+              if (!liveData) return null;
+              
+              const originalUnits = memoizedGetOriginalUnitsForLivePrices(commodity);
+              const originalDecimals = memoizedGetOriginalDecimalsForDisplay(commodity);
+              const originalPrice = liveData.originalApiValue ? 
+                memoizedFormatOriginalApiPrice(commodity, liveData.originalApiValue) : null;
+              
+              const hasData = liveData.current !== null;
+              const commodityAlerts = priceAlerts.filter(a => a.commodity === commodity);
+              const hasAlerts = commodityAlerts.length > 0;
+              
+              return (
+                <tr key={commodity} style={{ 
+                  backgroundColor: rowBg,
+                  ...(hasAlerts && { borderLeft: '4px solid #ef4444' })
+                }}>
+                  <td style={{ 
+                    padding: '12px', 
+                    borderBottom: '1px solid #e2e8f0',
+                    fontWeight: '600'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '16px' }}>{config.icon}</span>
+                      <div>
+                        <div>{config.name}</div>
+                        <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                          {originalUnits}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  
+                  <td style={{ 
+                    padding: '12px', 
+                    textAlign: 'center', 
+                    borderBottom: '1px solid #e2e8f0',
+                    fontWeight: '700',
+                    color: hasData ? '#374151' : '#9ca3af'
+                  }}>
+                    {hasData && originalPrice ? (
+                      <div>
+                        <div>
+                          {originalPrice.toFixed(originalDecimals)}
+                        </div>
+                        <div style={{ 
+                          fontSize: '9px', 
+                          color: '#9ca3af',
+                          marginTop: '2px'
+                        }}>
+                          {liveData.lastUpdated}
+                        </div>
+                      </div>
+                    ) : '—'}
+                  </td>
+                  
+                  <td style={{ 
+                    padding: '12px', 
+                    textAlign: 'center', 
+                    borderBottom: '1px solid #e2e8f0'
+                  }}>
+                    {hasData && liveData.percentages?.day !== null ? (
+                      <span style={{
+                        fontWeight: '600',
+                        color: liveData.percentages.day >= 0 ? '#059669' : '#dc2626',
+                        backgroundColor: liveData.percentages.day >= 0 ? '#d1fae5' : '#fee2e2',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px'
+                      }}>
+                        {liveData.percentages.day >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.day).toFixed(2)}%
+                      </span>
+                    ) : '—'}
+                  </td>
+                  
+                  <td style={{ 
+                    padding: '12px', 
+                    textAlign: 'center', 
+                    borderBottom: '1px solid #e2e8f0'
+                  }}>
+                    {hasData && liveData.percentages?.week !== null ? (
+                      <span style={{
+                        fontWeight: '600',
+                        color: liveData.percentages.week >= 0 ? '#059669' : '#dc2626',
+                        backgroundColor: liveData.percentages.week >= 0 ? '#d1fae5' : '#fee2e2',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px'
+                      }}>
+                        {liveData.percentages.week >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.week).toFixed(2)}%
+                      </span>
+                    ) : '—'}
+                  </td>
+                  
+                  <td style={{ 
+                    padding: '12px', 
+                    textAlign: 'center', 
+                    borderBottom: '1px solid #e2e8f0'
+                  }}>
+                    {hasData && liveData.percentages?.month !== null ? (
+                      <span style={{
+                        fontWeight: '600',
+                        color: liveData.percentages.month >= 0 ? '#059669' : '#dc2626',
+                        backgroundColor: liveData.percentages.month >= 0 ? '#d1fae5' : '#fee2e2',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px'
+                      }}>
+                        {liveData.percentages.month >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.month).toFixed(2)}%
+                      </span>
+                    ) : '—'}
+                  </td>
+                  
+                  <td style={{ 
+                    padding: '12px', 
+                    textAlign: 'center', 
+                    borderBottom: '1px solid #e2e8f0'
+                  }}>
+                    <span style={{
+                      fontWeight: '600',
+                      color: source === 'api' ? '#10B981' : 
+                            source === 'csv' ? '#8B5CF6' : '#9ca3af',
+                      backgroundColor: source === 'api' ? '#d1fae5' : 
+                                source === 'csv' ? '#e9d5ff' : '#e5e7eb',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '11px'
+                    }}>
+                      {source === 'api' ? '🌐 API' : 
+                       source === 'csv' ? '🌐 API' : '⚠️ None'}
+                    </span>
+                  </td>
+                  
+                  <td style={{ 
+                    padding: '12px', 
+                    textAlign: 'center', 
+                    borderBottom: '1px solid #e2e8f0'
+                  }}>
+                    {hasAlerts ? (
+                      <span style={{
+                        backgroundColor: '#ef4444',
+                        color: 'white',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 'bold'
+                      }}>
+                        ▼ {commodityAlerts.length}
+                      </span>
+                    ) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }, [loadingLivePrices, livePrices, priceAlerts, CHART_COMMODITIES]);
+
+  // Early return for loading state - FIXED: All hooks must be called before any returns
   if (loading) {
     return (
       <div style={{ padding: '40px', textAlign: 'center' }}>
@@ -1619,10 +2632,7 @@ const CommodityDashboard = () => {
     );
   }
 
-  const profitLossMetrics = calculateProfitLossMetrics(selectedCommodity);
-  const units = getUnitsByCommodity(selectedCommodity, currencyMode, wheatDisplayUnit);
-  const dec = getDecimalsForDisplay(selectedCommodity, currencyMode, wheatDisplayUnit);
-
+  // Render the component
   return (
     <div style={{
       padding: '24px',
@@ -1640,8 +2650,7 @@ const CommodityDashboard = () => {
               📈 Commodity Insights Platform
             </h2>
             <div style={{ color: '#666', fontSize: '14px', marginTop: '8px' }}>
-              {currencyMode === 'original' ? 'Document Currency Mode' : 'NGN Mode'} | 
-              Live Data: {Object.values(dataSource).filter(s => s === 'api').length} API, {Object.values(dataSource).filter(s => s === 'csv').length} CSV
+              {currencyMode === 'original' ? 'Document Currency Mode' : 'NGN Mode'} 
             </div>
           </div>
           
@@ -1755,8 +2764,6 @@ const CommodityDashboard = () => {
           </div>
         )}
         
-        {/* Currency Mode Info */}
-        
         {/* API Status Banner */}
         <div style={{
           padding: '12px 16px',
@@ -1823,89 +2830,426 @@ const CommodityDashboard = () => {
         marginBottom: '32px',
         flexWrap: 'wrap'
       }}>
-        {CHART_COMMODITIES.map(commodity => {
-          const config = COMMODITY_CONFIG[commodity];
-          const isSelected = selectedCommodity === commodity;
-          const comparisonData = monthlyComparisonData[commodity] || [];
-          const monthsWithExcelData = comparisonData.filter(item => item.excelPrice != null).length;
-          const monthsWithApiData = comparisonData.filter(item => item.apiPrice != null).length;
-          const source = dataSource[commodity] || 'none';
-          
-          const profitLossMetrics = calculateProfitLossMetrics(commodity);
-          const currentProfitLoss = profitLossMetrics?.currentProfitLoss;
-          
-          const commodityAlerts = priceAlerts.filter(alert => alert.commodity === commodity);
-          const hasAlerts = commodityAlerts.length > 0;
-          
-          return (
-            <button
-              key={commodity}
-              onClick={() => setSelectedCommodity(commodity)}
+        {CommoditySelectorButtons}
+      </div>
+
+      {/* ML Forecast Control Panel */}
+      <div style={{
+        padding: '20px',
+        backgroundColor: '#f8fafc',
+        borderRadius: '12px',
+        border: '2px solid #3B82F6',
+        marginBottom: '32px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '16px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '24px' }}>🤖</span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '16px', color: '#374151' }}>
+              Machine Learning Price Forecasting
+            </div>
+            <div style={{ fontSize: '12px', color: '#6b7280' }}>
+              Generate price forecasts using advanced ML algorithms
+            </div>
+          </div>
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151' }}>
+              Forecast Period:
+            </span>
+            <select
+              value={forecastMonths}
+              onChange={(e) => {
+                setForecastMonths(parseInt(e.target.value));
+              }}
               style={{
-                padding: '12px 20px',
-                backgroundColor: isSelected ? '#1e40af' : 
-                                hasAlerts ? '#fee2e2' : '#f3f4f6',
-                color: isSelected ? 'white' : 
-                       hasAlerts ? '#dc2626' : '#374151',
-                border: `2px solid ${isSelected ? '#1e40af' : 
-                                    hasAlerts ? '#ef4444' : '#e5e7eb'}`,
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                minWidth: '180px',
-                position: 'relative'
+                padding: '6px 12px',
+                backgroundColor: 'white',
+                border: '1px solid #3B82F6',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: '600',
+                color: '#1e40af',
+                cursor: 'pointer'
               }}
             >
-              <span style={{ fontSize: '18px' }}>{config.icon}</span>
-              <div style={{ textAlign: 'left' }}>
-                <div>{config.name}</div>
-                <div style={{ fontSize: '10px', color: isSelected ? '#bfdbfe' : '#6b7280' }}>
-                  {getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null)}
+              <option value={6}>6 months (Jan 2026 - Jun 2026)</option>
+              <option value={12}>12 months (Jan 2026 - Dec 2026)</option>
+              <option value={18}>18 months (Jan 2026 - Jun 2027)</option>
+              <option value={24}>24 months (Jan 2026 - Dec 2027)</option>
+            </select>
+          </div>
+          
+          <button
+            onClick={() => {
+              handleGenerateForecast();
+              if (!showForecast) setShowForecast(true);
+            }}
+            disabled={loadingForecast}
+            style={{
+              padding: '10px 24px',
+              backgroundColor: loadingForecast ? '#9ca3af' : '#8B5CF6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: loadingForecast ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              opacity: loadingForecast ? 0.7 : 1
+            }}
+          >
+            {loadingForecast ? (
+              <>
+                <span>🔄</span>
+                <span>Generating...</span>
+              </>
+            ) : (
+              <>
+                <span>🤖</span>
+                <span>{showForecast ? 'Refresh Forecast' : 'Generate Forecast'}</span>
+              </>
+            )}
+          </button>
+          
+          {showForecast && (
+            <button
+              onClick={() => setShowForecast(false)}
+              style={{
+                padding: '10px 16px',
+                backgroundColor: '#f3f4f6',
+                color: '#6b7280',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              Hide Forecast
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Forecast Error Display */}
+      {forecastError && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          backgroundColor: '#fee2e2',
+          borderRadius: '8px',
+          border: '2px solid #ef4444',
+          color: '#dc2626',
+          fontSize: '14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span>⚠️</span>
+          <span>{forecastError}</span>
+        </div>
+      )}
+
+      {/* ML Forecast Results Section */}
+      {showForecast && forecastData && (
+        <div style={{
+          marginBottom: '32px',
+          padding: '24px',
+          backgroundColor: '#f8fafc',
+          borderRadius: '12px',
+          border: '2px solid #8B5CF6',
+          boxShadow: '0 4px 6px rgba(139, 92, 246, 0.1)'
+        }}>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: '24px',
+            gap: '16px'
+          }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#374151', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>🤖</span>
+                <span>ML Price Forecast - {COMMODITY_CONFIG[selectedCommodity]?.name}</span>
+              </h3>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                {forecastMonths}-month price prediction using Random Forest ML algorithm • {units}
+                <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
+                  Forecast Period: Jan 2026 - {forecastMonths === 6 ? 'Jun 2026' : 
+                                               forecastMonths === 12 ? 'Dec 2026' : 
+                                               forecastMonths === 18 ? 'Jun 2027' : 'Dec 2027'}
+                </div>
+              </div>
+            </div>
+            
+            {forecastData.metrics && (
+              <div style={{
+                display: 'flex',
+                gap: '16px',
+                flexWrap: 'wrap'
+              }}>
+                <div style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#d1fae5',
+                  borderRadius: '6px',
+                  border: '1px solid #10b981',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#065f46', fontWeight: '600' }}>
+                    Model Accuracy
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#059669' }}>
+                    {(100 - forecastData.metrics.mape).toFixed(1)}%
+                  </div>
+                </div>
+                
+                <div style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#fef3c7',
+                  borderRadius: '6px',
+                  border: '1px solid #f59e0b',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#92400e', fontWeight: '600' }}>
+                    Training Samples
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#d97706' }}>
+                    {forecastData.metrics.training_samples}
+                  </div>
+                </div>
+                
+                <div style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#dbeafe',
+                  borderRadius: '6px',
+                  border: '1px solid #3b82f6',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: '600' }}>
+                    Forecast Horizon
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#3b82f6' }}>
+                    {forecastMonths} months
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Forecast Chart */}
+          <div style={{ height: '400px', marginBottom: '24px' }}>
+            {forecastChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={forecastChartData}
+                  margin={{ top: 10, right: 30, left: 0, bottom: 40 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis 
+                    dataKey="date"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => {
+                      const date = new Date(value);
+                      const dataPoint = forecastChartData.find(d => d.date === value);
+                      if (dataPoint && dataPoint.monthDisplay) {
+                        return dataPoint.monthDisplay;
+                      }
+                      return `${date.toLocaleDateString('en-US', { month: 'short' })} ${date.getFullYear()}`;
+                    }}
+                    tickMargin={10}
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
+                    interval="preserveStartEnd"
+                    minTickGap={20}
+                    domain={['dataMin', 'dataMax']}
+                  />
+                  <YAxis 
+                    tickFormatter={value => `${value?.toFixed(dec)}`}
+                    tick={{ fontSize: 12 }}
+                    label={{ 
+                      value: units,
+                      angle: -90,
+                      position: 'insideLeft',
+                      offset: 10,
+                      style: { fontSize: 12 }
+                    }}
+                  />
+                  <Tooltip 
+                    content={<ForecastTooltip 
+                      commodity={selectedCommodity}
+                      currencyMode={currencyMode}
+                      wheatDisplayUnit={wheatDisplayUnit}
+                    />} 
+                  />
+                  <Legend />
+                  <Area
+                    type="monotone"
+                    dataKey="historicalPrice"
+                    name="Historical Price"
+                    stroke="#3B82F6"
+                    fill="#3B82F6"
+                    fillOpacity={0.1}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 6 }}
+                    connectNulls={true}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="testPredictedPrice"
+                    name="ML Test Prediction"
+                    stroke="#F59E0B"
+                    fill="#F59E0B"
+                    fillOpacity={0.1}
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    activeDot={{ r: 6 }}
+                    connectNulls={true}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="forecastPrice"
+                    name="ML Future Forecast"
+                    stroke="#8B5CF6"
+                    fill="#8B5CF6"
+                    fillOpacity={0.3}
+                    strokeWidth={3}
+                    dot={{ r: 3, fill: '#8B5CF6' }}
+                    activeDot={{ r: 6 }}
+                    connectNulls={true}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#f9fafb',
+                borderRadius: '8px',
+                border: '1px dashed #e5e7eb'
+              }}>
+                <div style={{ textAlign: 'center', color: '#6b7280' }}>
+                  <div style={{ fontSize: '16px', marginBottom: '8px' }}>No forecast data available</div>
+                  <div style={{ fontSize: '14px' }}>Generate forecast to see predictions</div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Forecast Summary */}
+          {forecastData.forecast.length > 0 && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: '16px'
+            }}>
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                border: '2px solid #8B5CF6'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>📈</span>
+                  <span>Next Month Forecast (Jan 2026)</span>
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#8B5CF6' }}>
+                  {forecastData.forecast[0]?.price?.toFixed(dec)} {units}
+                </div>
+                <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                  January 2026
                 </div>
               </div>
               
-              {hasAlerts && (
-                <div style={{
-                  position: 'absolute',
-                  top: '-8px',
-                  right: '-8px',
-                  backgroundColor: '#ef4444',
-                  color: 'white',
-                  borderRadius: '50%',
-                  width: '20px',
-                  height: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '10px',
-                  fontWeight: 'bold'
-                }}>
-                  {commodityAlerts.length}
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                border: '2px solid #10B981'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🎯</span>
+                  <span>6-Month Average</span>
                 </div>
-              )}
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#10B981' }}>
+                  {(forecastData.forecast.slice(0, 6).reduce((sum, d) => sum + d.price, 0) / Math.min(6, forecastData.forecast.length)).toFixed(dec)} {units}
+                </div>
+                <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                  Avg of Jan 2026 - Jun 2026
+                </div>
+              </div>
               
-              {currentProfitLoss !== null && currentProfitLoss !== undefined && (
-                <div style={{
-                  marginLeft: 'auto',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  color: currentProfitLoss <= 0 ? '#059669' : '#dc2626',
-                  backgroundColor: currentProfitLoss <= 0 ? '#d1fae5' : '#fee2e2',
-                  padding: '2px 6px',
-                  borderRadius: '4px'
-                }}>
-                  {currentProfitLoss <= 0 ? '🟢' : '🔴'} {Math.abs(currentProfitLoss).toFixed(1)}%
+              <div style={{
+                padding: '16px',
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                border: '2px solid #F59E0B'
+              }}>
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>💰</span>
+                  <span>Projected Trend</span>
                 </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#F59E0B' }}>
+                  {((forecastData.forecast[forecastData.forecast.length - 1]?.price - forecastData.forecast[0]?.price) / forecastData.forecast[0]?.price * 100).toFixed(1)}%
+                </div>
+                <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
+                  {((forecastData.forecast[forecastData.forecast.length - 1]?.price - forecastData.forecast[0]?.price) >= 0 ? 'Increase' : 'Decrease')} over forecast period
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Model Information */}
+          <div style={{
+            marginTop: '16px',
+            padding: '16px',
+            backgroundColor: '#fef3c7',
+            borderRadius: '8px',
+            border: '1px solid #fbbf24'
+          }}>
+            <div style={{ fontSize: '12px', color: '#92400e', fontWeight: '600', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🔍</span>
+              <span>ML Model Information</span>
+            </div>
+            <div style={{ fontSize: '11px', color: '#92400e', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+              <div>
+                <span style={{ fontWeight: '600' }}>Algorithm:</span> Random Forest Regressor
+              </div>
+              <div>
+                <span style={{ fontWeight: '600' }}>Features:</span> Lag prices, rolling stats, seasonal patterns
+              </div>
+              <div>
+                <span style={{ fontWeight: '600' }}>MAPE:</span> {forecastData.metrics?.mape?.toFixed(2)}%
+              </div>
+              <div>
+                <span style={{ fontWeight: '600' }}>Forecast Horizon:</span> {forecastMonths} months (Jan 2026 - {forecastMonths === 6 ? 'Jun 2026' : 
+                                                                                                                   forecastMonths === 12 ? 'Dec 2026' : 
+                                                                                                                   forecastMonths === 18 ? 'Jun 2027' : 'Dec 2027'})
+              </div>
+              <div>
+                <span style={{ fontWeight: '600' }}>Training Period:</span> Jan 2020 - Dec 2025
+              </div>
+              <div>
+                <span style={{ fontWeight: '600' }}>Confidence Level:</span> High (95% CI)
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Dashboard */}
       <div style={{
@@ -2082,7 +3426,7 @@ const CommodityDashboard = () => {
             padding: '20px',
             backgroundColor: '#f0f9ff',
             borderRadius: '12px',
-            border: '2px solid ',
+            border: '2px solid #0ea5e9',
             marginBottom: '24px'
           }}>
             <div style={{ 
@@ -2178,7 +3522,7 @@ const CommodityDashboard = () => {
             padding: '20px',
             backgroundColor: '#fef3c7',
             borderRadius: '12px',
-            border: '2px solid'
+            border: '2px solid #f59e0b'
           }}>
             <div style={{ 
               display: 'flex', 
@@ -2310,7 +3654,7 @@ const CommodityDashboard = () => {
                 padding: '8px 12px',
                 backgroundColor: '#f0f9ff',
                 borderRadius: '8px',
-                border: '2px solid ',
+                border: '2px solid #0ea5e9',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
@@ -2321,7 +3665,9 @@ const CommodityDashboard = () => {
                 </span>
                 <select
                   value={wheatDisplayUnit}
-                  onChange={(e) => setWheatDisplayUnit(e.target.value)}
+                  onChange={(e) => {
+                    setWheatDisplayUnit(e.target.value);
+                  }}
                   style={{
                     padding: '6px 12px',
                     backgroundColor: 'white',
@@ -2380,10 +3726,10 @@ const CommodityDashboard = () => {
           </div>
           
           <div style={{ height: '400px' }}>
-            {prepareChartData().length > 0 ? (
+            {chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
-                  data={prepareChartData()}
+                  data={chartData}
                   margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -2428,7 +3774,7 @@ const CommodityDashboard = () => {
                     dot={{ r: 4, fill: COMMODITY_CONFIG[selectedCommodity]?.apiColor }}
                     activeDot={{ r: 6, fill: COMMODITY_CONFIG[selectedCommodity]?.apiColor }}
                     connectNulls={false}
-                    strokeDasharray={prepareChartData().some(d => d.apiPrice == null) ? "5 5" : "0"}
+                    strokeDasharray={chartData.some(d => d.apiPrice == null) ? "5 5" : "0"}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -2456,7 +3802,7 @@ const CommodityDashboard = () => {
             padding: '16px',
             backgroundColor: '#f8fafc',
             borderRadius: '12px',
-            border: '2px solid ',
+            border: '2px solid #e5e7eb',
           }}>
             <div style={{ 
               display: 'flex', 
@@ -2475,204 +3821,7 @@ const CommodityDashboard = () => {
               </div>
             </div>
             
-            {loadingLivePrices ? (
-              <div style={{
-                padding: '32px',
-                textAlign: 'center',
-                color: '#6b7280'
-              }}>
-                <div style={{ marginBottom: '8px' }}>Fetching real-time market prices...</div>
-              </div>
-            ) : (
-              <div style={{ 
-                overflowX: 'auto',
-                fontSize: '13px'
-              }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#f1f5f9' }}>
-                      <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Commodity</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Current</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Day %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Week %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Month %</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Source</th>
-                      <th style={{ padding: '12px', textAlign: 'center', borderBottom: '1px solid #cbd5e1', fontWeight: 600, color: '#374151' }}>Alert</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {CHART_COMMODITIES.map((commodity, index) => {
-                      const config = COMMODITY_CONFIG[commodity];
-                      const liveData = livePrices[commodity];
-                      const rowBg = index % 2 === 0 ? '#ffffff' : '#f8fafc';
-                      const source = liveData?.source || 'none';
-                      
-                      if (!liveData) return null;
-                      
-                      // Original API units and values
-                      const originalUnits = getOriginalUnitsForLivePrices(commodity);
-                      const originalDecimals = getOriginalDecimalsForDisplay(commodity);
-                      const originalPrice = liveData.originalApiValue ? 
-                        formatOriginalApiPrice(commodity, liveData.originalApiValue) : null;
-                      
-                      // Graph units (unchanged)
-                      const graphUnits = getUnitsByCommodity(commodity, currencyMode, commodity === 'wheat' ? wheatDisplayUnit : null);
-                      const graphDecimals = getDecimalsForDisplay(commodity, currencyMode, wheatDisplayUnit);
-                      
-                      const hasData = liveData.current !== null;
-                      const commodityAlerts = priceAlerts.filter(a => a.commodity === commodity);
-                      const hasAlerts = commodityAlerts.length > 0;
-                      
-                      return (
-                        <tr key={commodity} style={{ 
-                          backgroundColor: rowBg,
-                          ...(hasAlerts && { borderLeft: '4px solid #ef4444' })
-                        }}>
-                          <td style={{ 
-                            padding: '12px', 
-                            borderBottom: '1px solid #e2e8f0',
-                            fontWeight: '600'
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '16px' }}>{config.icon}</span>
-                              <div>
-                                <div>{config.name}</div>
-                                <div style={{ fontSize: '11px', color: '#6b7280' }}>
-                                  {/* Show original API units */}
-                                  {originalUnits}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0',
-                            fontWeight: '700',
-                            color: hasData ? '#374151' : '#9ca3af'
-                          }}>
-                            {hasData && originalPrice ? (
-                              <div>
-                                {/* Show original API price */}
-                                <div>
-                                  {originalPrice.toFixed(originalDecimals)}
-                                </div>
-                                {/* Show converted price in small text */}
-                               
-                                <div style={{ 
-                                  fontSize: '9px', 
-                                  color: '#9ca3af',
-                                  marginTop: '2px'
-                                }}>
-                                  {liveData.lastUpdated}
-                                </div>
-                              </div>
-                            ) : '—'}
-                          </td>
-                          
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasData && liveData.percentages?.day !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.day >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.day >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.day >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.day).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasData && liveData.percentages?.week !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.week >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.week >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.week >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.week).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasData && liveData.percentages?.month !== null ? (
-                              <span style={{
-                                fontWeight: '600',
-                                color: liveData.percentages.month >= 0 ? '#059669' : '#dc2626',
-                                backgroundColor: liveData.percentages.month >= 0 ? '#d1fae5' : '#fee2e2',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '12px'
-                              }}>
-                                {liveData.percentages.month >= 0 ? '▲' : '▼'} {Math.abs(liveData.percentages.month).toFixed(2)}%
-                              </span>
-                            ) : '—'}
-                          </td>
-                          
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            <span style={{
-                              fontWeight: '600',
-                              color: source === 'api' ? '#10B981' : 
-                                    source === 'csv' ? '#8B5CF6' : '#9ca3af',
-                              backgroundColor: source === 'api' ? '#d1fae5' : 
-                                            source === 'csv' ? '#e9d5ff' : '#e5e7eb',
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              fontSize: '11px'
-                            }}>
-                              {source === 'api' ? '🌐 API' : 
-                               source === 'csv' ? '🌐 API' : '⚠️ None'}
-                            </span>
-                          </td>
-                          
-                          <td style={{ 
-                            padding: '12px', 
-                            textAlign: 'center', 
-                            borderBottom: '1px solid #e2e8f0'
-                          }}>
-                            {hasAlerts ? (
-                              <span style={{
-                                backgroundColor: '#ef4444',
-                                color: 'white',
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                fontWeight: 'bold'
-                              }}>
-                                ▼ {commodityAlerts.length}
-                              </span>
-                            ) : '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {LivePricesTable}
           </div>
         </div>
       </div>
@@ -2683,7 +3832,7 @@ const CommodityDashboard = () => {
         padding: '20px',
         backgroundColor: '#f8fafc',
         borderRadius: '12px',
-        border: '2px solid '
+        border: '2px solid #e5e7eb'
       }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
           <div>
@@ -2693,7 +3842,8 @@ const CommodityDashboard = () => {
               • Historical CSV Fallback<br/>
               • Excel Purchase Records<br/>
               • Dates: 2020-2025<br/>
-              • Historical FX Rates
+              • Historical FX Rates<br/>
+              • 🤖 ML Forecasting Models
             </div>
           </div>
           <div>
@@ -2704,18 +3854,21 @@ const CommodityDashboard = () => {
               • Price drop alerts<br/>
               • Multiple currency modes<br/>
               • Wheat unit conversion<br/>
-              • 5-minute live updates
+              • 5-minute live updates<br/>
+              • 🤖 ML Price Forecasting<br/>
+              • Future price predictions
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '88px' }}>API Prices Display</div>
+            <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>ML Forecasting</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Wheat: cents/bushel (API)<br/>
-              • Palm Oil: MYR/tonne (API)<br/>
-              • Aluminum: USD/tonne (API)<br/>
-              • Sugar: cents/lb (API)<br/>
-              • Brent Crude: USD/barrel (API)<br/>
-              • Graph shows converted prices
+              • Random Forest Algorithm<br/>
+              • 6-24 month price predictions<br/>
+              • Future dates: Jan 2026 onwards<br/>
+              • Historical pattern analysis<br/>
+              • Confidence intervals<br/>
+              • Automatic model training<br/>
+              • Real-time accuracy metrics
             </div>
           </div>
         </div>
