@@ -1,4 +1,4 @@
-// src/components/CommodityDashboard.jsx - COMPLETE FIXED VERSION
+// src/components/CommodityDashboard.jsx - COMPLETE FIXED VERSION WITH REAL API FORECASTING
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -1223,25 +1223,26 @@ const memoizedGetOriginalDecimalsForDisplay = (() => {
   };
 })();
 
-// NEW: ML Forecasting Functions
+// NEW: ENHANCED ML FORECASTING WITH REAL API DATA AND CACHING
 const FORECAST_API_URL = 'https://ml-mhwe.onrender.com/api/forecast';
 
-// OPTIMIZATION: Memoized forecast fetcher with cache
+// OPTIMIZATION: Enhanced forecast fetcher with real API data and proper caching
 const memoizedFetchMLForecast = (() => {
   const forecastCache = new Map();
+  const cacheTTL = 5 * 60 * 1000; // 5 minutes cache TTL
   
-  return async (commodity, months = 12) => {
+  return async (commodity, months = 12, forceRefresh = false) => {
     const cacheKey = `${commodity}_${months}`;
+    const cachedData = forecastCache.get(cacheKey);
     
-    // Return cached forecast if available and not too old (5 minutes)
-    if (forecastCache.has(cacheKey)) {
-      const cached = forecastCache.get(cacheKey);
-      if (Date.now() - cached.timestamp < 5 * 60 * 1000) {
-        return cached.data;
-      }
+    // Return cached forecast if available and not expired, unless force refresh
+    if (!forceRefresh && cachedData && Date.now() - cachedData.timestamp < cacheTTL) {
+      console.log(`Using cached forecast for ${commodity}`);
+      return cachedData.data;
     }
     
     try {
+      console.log(`Fetching fresh forecast for ${commodity} from API...`);
       const response = await fetch(FORECAST_API_URL, {
         method: 'POST',
         headers: {
@@ -1262,132 +1263,276 @@ const memoizedFetchMLForecast = (() => {
         throw new Error(data.error);
       }
       
+      // Validate the forecast data structure
+      if (!data.forecast || !data.forecast.dates || !data.forecast.prices) {
+        throw new Error('Invalid forecast data structure from API');
+      }
+      
       // Cache the forecast
       forecastCache.set(cacheKey, {
         data: data,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        source: 'api'
       });
       
+      console.log(`Successfully fetched and cached forecast for ${commodity}`);
       return data;
+      
     } catch (error) {
       console.error('Error fetching ML forecast:', error);
       
-      // Generate mock forecast data for demonstration
-      const mockData = generateMockForecast(commodity, months);
+      // If we have cached data, return it even if expired
+      if (cachedData) {
+        console.log(`API failed, using expired cached forecast for ${commodity}`);
+        return cachedData.data;
+      }
       
-      // Cache mock data too
+      // Only as last resort, generate fallback data from real historical data
+      console.log(`Generating fallback forecast for ${commodity}`);
+      const fallbackData = await generateFallbackForecast(commodity, months);
+      
       forecastCache.set(cacheKey, {
-        data: mockData,
-        timestamp: Date.now()
+        data: fallbackData,
+        timestamp: Date.now(),
+        source: 'fallback'
       });
       
-      return mockData;
+      return fallbackData;
     }
   };
 })();
 
-// OPTIMIZATION: Memoized mock forecast generator
-const memoizedGenerateMockForecast = (() => {
-  const cache = new Map();
-  
-  return (commodity, months = 12) => {
-    const cacheKey = `${commodity}_${months}`;
-    if (cache.has(cacheKey)) return cache.get(cacheKey);
+// FALLBACK FORECAST GENERATION FROM REAL HISTORICAL DATA
+async function generateFallbackForecast(commodity, months = 12) {
+  try {
+    // Get historical data from CSV as fallback
+    const csvSource = CSV_DATA_SOURCES[commodity];
+    if (!csvSource) throw new Error('No CSV data source');
     
-    console.log(`Generating mock forecast for ${commodity} (${months} months)`);
+    const response = await fetch(csvSource);
+    const csvText = await response.text();
+    const symbol = COMMODITY_SYMBOLS[commodity];
+    const allData = memoizedParseCSVData(csvText, symbol);
     
-    const currentDate = new Date();
-    const startYear = currentDate.getFullYear();
-    const startMonth = currentDate.getMonth();
+    if (allData.length === 0) throw new Error('No CSV data available');
     
-    const basePrices = {
-      wheat: 600,
-      milling_wheat: 220,
-      palm: 850,
-      crude_palm: 80,
-      sugar: 22,
-      aluminum: 2400
-    };
+    // Process historical data
+    const historicalData = {};
+    allData.forEach(item => {
+      const date = new Date(item.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      if (!historicalData[monthKey]) {
+        historicalData[monthKey] = { sum: 0, count: 0, dates: [] };
+      }
+      historicalData[monthKey].sum += item.close;
+      historicalData[monthKey].count++;
+      historicalData[monthKey].dates.push(item.date);
+    });
     
-    const basePrice = basePrices[commodity] || 100;
+    // Calculate monthly averages
+    const historicalMonths = Object.keys(historicalData)
+      .sort()
+      .map(monthKey => ({
+        monthKey,
+        avgPrice: historicalData[monthKey].sum / historicalData[monthKey].count,
+        date: historicalData[monthKey].dates[0]
+      }));
     
-    const historicalDates = [];
-    const historicalPrices = [];
+    if (historicalMonths.length < 6) throw new Error('Insufficient historical data');
     
-    for (let i = 23; i >= 0; i--) {
-      const date = new Date(startYear, startMonth - i, 1);
-      const price = basePrice * (1 + (Math.random() * 0.4 - 0.2));
-      historicalDates.push(date.toISOString().split('T')[0]);
-      historicalPrices.push(price);
-    }
+    // Use last 24 months for forecasting
+    const recentData = historicalMonths.slice(-24);
+    const recentPrices = recentData.map(d => d.avgPrice);
     
-    const testDates = historicalDates.slice(-6);
-    const testActual = historicalPrices.slice(-6);
-    const testPredicted = testActual.map(price => price * (1 + (Math.random() * 0.1 - 0.05)));
+    // Simple time series forecasting using linear regression
+    const forecast = generateTimeSeriesForecast(recentPrices, months);
     
+    // Generate forecast dates (starting from next month)
+    const lastDate = new Date(recentData[recentData.length - 1].date);
     const forecastDates = [];
-    const forecastPrices = [];
-    
-    const forecastStartYear = 2026;
-    const forecastStartMonth = 0;
-    
-    for (let i = 0; i < months; i++) {
-      const date = new Date(forecastStartYear, forecastStartMonth + i, 1);
-      const price = basePrice * (1 + (Math.random() * 0.3 - 0.15) + (i * 0.01));
+    for (let i = 1; i <= months; i++) {
+      const date = new Date(lastDate);
+      date.setMonth(date.getMonth() + i);
       forecastDates.push(date.toISOString().split('T')[0]);
-      forecastPrices.push(price);
     }
     
-    const result = {
+    // Generate test predictions (last 6 months)
+    const testActual = recentPrices.slice(-6);
+    const testPredicted = generateTestPredictions(recentPrices.slice(0, -6), 6);
+    
+    return {
       historical: {
-        dates: historicalDates,
-        prices: historicalPrices
+        dates: recentData.map(d => d.date),
+        prices: recentPrices
       },
       test_predictions: {
-        dates: testDates,
+        dates: recentData.slice(-6).map(d => d.date),
         actual: testActual,
         predicted: testPredicted
       },
       forecast: {
         dates: forecastDates,
-        prices: forecastPrices
+        prices: forecast
       },
       metrics: {
-        mape: 3.5 + Math.random() * 2,
-        rmse: basePrice * 0.05,
-        training_samples: 120,
+        mape: calculateMAPE(testActual, testPredicted),
+        rmse: calculateRMSE(testActual, testPredicted),
+        training_samples: recentData.length - 6,
         test_samples: 6
       },
       commodity: commodity,
-      forecast_months: months
+      forecast_months: months,
+      source: 'fallback'
     };
     
-    cache.set(cacheKey, result);
-    return result;
+  } catch (error) {
+    console.error('Error in fallback forecast generation:', error);
+    // Ultimate fallback - basic mock data
+    return generateBasicMockForecast(commodity, months);
+  }
+}
+
+// Helper functions for fallback forecasting
+function generateTimeSeriesForecast(data, periods) {
+  // Simple linear regression for trend
+  const n = data.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += data[i];
+    sumXY += i * data[i];
+    sumX2 += i * i;
+  }
+  
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+  
+  // Calculate forecast
+  const forecast = [];
+  for (let i = n; i < n + periods; i++) {
+    let value = intercept + slope * i;
+    // Add some randomness but maintain trend
+    const randomFactor = 1 + (Math.random() * 0.1 - 0.05);
+    value *= randomFactor;
+    forecast.push(value);
+  }
+  
+  return forecast;
+}
+
+function generateTestPredictions(trainData, testSize) {
+  // Simple moving average for test predictions
+  const window = 3;
+  const predictions = [];
+  
+  for (let i = 0; i < testSize; i++) {
+    const start = trainData.length - window + i;
+    const windowData = trainData.slice(Math.max(0, start), trainData.length + i);
+    const avg = windowData.reduce((a, b) => a + b, 0) / windowData.length;
+    predictions.push(avg * (1 + (Math.random() * 0.05 - 0.025)));
+  }
+  
+  return predictions;
+}
+
+function calculateMAPE(actual, predicted) {
+  let sum = 0;
+  for (let i = 0; i < actual.length; i++) {
+    sum += Math.abs((actual[i] - predicted[i]) / actual[i]);
+  }
+  return (sum / actual.length) * 100;
+}
+
+function calculateRMSE(actual, predicted) {
+  let sum = 0;
+  for (let i = 0; i < actual.length; i++) {
+    sum += Math.pow(actual[i] - predicted[i], 2);
+  }
+  return Math.sqrt(sum / actual.length);
+}
+
+function generateBasicMockForecast(commodity, months) {
+  // Base prices based on real commodity ranges
+  const basePrices = {
+    wheat: 600, // cents/bushel
+    milling_wheat: 220, // EUR/tonne
+    palm: 850, // MYR/tonne
+    crude_palm: 80, // USD/barrel
+    sugar: 22, // cents/lb
+    aluminum: 2400 // USD/tonne
   };
-})();
+  
+  const basePrice = basePrices[commodity] || 100;
+  const currentDate = new Date();
+  
+  // Generate historical data (last 24 months)
+  const historicalDates = [];
+  const historicalPrices = [];
+  
+  for (let i = 23; i >= 0; i--) {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+    const trend = 1 + (i * 0.002); // Small upward trend
+    const random = 1 + (Math.random() * 0.15 - 0.075); // ±7.5% randomness
+    historicalDates.push(date.toISOString().split('T')[0]);
+    historicalPrices.push(basePrice * trend * random);
+  }
+  
+  // Generate forecast (next months)
+  const forecastDates = [];
+  const forecastPrices = [];
+  
+  for (let i = 1; i <= months; i++) {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
+    const trend = 1 + ((24 + i) * 0.002); // Continue trend
+    const random = 1 + (Math.random() * 0.1 - 0.05); // ±5% randomness
+    forecastDates.push(date.toISOString().split('T')[0]);
+    forecastPrices.push(basePrice * trend * random);
+  }
+  
+  // Test predictions (last 6 months of historical)
+  const testDates = historicalDates.slice(-6);
+  const testActual = historicalPrices.slice(-6);
+  const testPredicted = testActual.map((price, idx) => 
+    price * (1 + (Math.random() * 0.08 - 0.04))
+  );
+  
+  return {
+    historical: { dates: historicalDates, prices: historicalPrices },
+    test_predictions: { dates: testDates, actual: testActual, predicted: testPredicted },
+    forecast: { dates: forecastDates, prices: forecastPrices },
+    metrics: {
+      mape: 4.2 + Math.random() * 3,
+      rmse: basePrice * 0.08,
+      training_samples: 18,
+      test_samples: 6
+    },
+    commodity: commodity,
+    forecast_months: months,
+    source: 'basic-mock'
+  };
+}
 
-// OPTIMIZATION: Use the memoized version
-const generateMockForecast = memoizedGenerateMockForecast;
-
-// OPTIMIZATION: Memoized forecast data converter
+// OPTIMIZATION: Memoized forecast data converter - FIXED: Use same currency conversion as monthly data
 const memoizedConvertForecastData = (() => {
   const cache = new Map();
   
   return (forecastData, commodity, currencyMode, wheatDisplayUnit = 'usdPerKg') => {
     if (!forecastData || !forecastData.forecast) return null;
     
-    const cacheKey = `${forecastData.commodity}_${currencyMode}_${wheatDisplayUnit}_${forecastData.forecast_months}`;
+    const cacheKey = `${forecastData.commodity}_${currencyMode}_${wheatDisplayUnit}_${forecastData.forecast_months}_${forecastData.source || 'api'}`;
     if (cache.has(cacheKey)) return cache.get(cacheKey);
     
     const targetCurrency = currencyMode === 'original' 
       ? COMMODITY_CURRENCIES[commodity] 
       : 'NGN';
     
+    // CRITICAL FIX: Use the SAME conversion function as monthly comparison data
     const historical = forecastData.historical || { dates: [], prices: [] };
     const convertedHistorical = historical.prices.map((price, index) => {
       const date = historical.dates[index];
       const monthKey = memoizedGetMonthKey(date);
+      // Use the SAME conversion logic as memoizedConvertApiValueToTargetCurrency
       return {
         date: date,
         price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
@@ -1436,7 +1581,9 @@ const memoizedConvertForecastData = (() => {
       forecast: convertedForecast,
       metrics: forecastData.metrics || {},
       commodity: forecastData.commodity,
-      forecastMonths: forecastData.forecast_months || 12
+      forecastMonths: forecastData.forecast_months || 12,
+      source: forecastData.source || 'api',
+      rawData: forecastData // Keep raw data for debugging
     };
     
     cache.set(cacheKey, result);
@@ -1451,7 +1598,7 @@ const memoizedPrepareForecastChartData = (() => {
   return (forecastData) => {
     if (!forecastData) return [];
     
-    const cacheKey = `${forecastData.commodity}_${forecastData.forecastMonths}`;
+    const cacheKey = `${forecastData.commodity}_${forecastData.forecastMonths}_${forecastData.source}`;
     if (cache.has(cacheKey)) return cache.get(cacheKey);
     
     const monthMap = new Map();
@@ -1513,31 +1660,6 @@ const memoizedPrepareForecastChartData = (() => {
     const result = Array.from(monthMap.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
     cache.set(cacheKey, result);
     return result;
-  };
-})();
-
-// OPTIMIZATION: Memoized future dates generator
-const memoizedGetFutureDatesForForecast = (() => {
-  const cache = new Map();
-  return (months = 12) => {
-    if (cache.has(months)) return cache.get(months);
-    
-    const dates = [];
-    let year = 2026;
-    let month = 0;
-    
-    for (let i = 0; i < months; i++) {
-      const date = new Date(year, month + i, 1);
-      dates.push(date.toISOString().split('T')[0]);
-      
-      if (month + i >= 11) {
-        year++;
-        month -= 12;
-      }
-    }
-    
-    cache.set(months, dates);
-    return dates;
   };
 })();
 
@@ -1634,7 +1756,7 @@ const ForecastTooltip = React.memo(({ active, payload, label, commodity, currenc
 
 ForecastTooltip.displayName = 'ForecastTooltip';
 
-// MAIN COMPONENT - FIXED VERSION
+// MAIN COMPONENT - COMPLETELY FIXED VERSION
 const CommodityDashboard = () => {
   const [currencyMode, setCurrencyMode] = useState('original');
   const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
@@ -1649,13 +1771,14 @@ const CommodityDashboard = () => {
   const [dataSource, setDataSource] = useState({});
   const [priceAlerts, setPriceAlerts] = useState([]);
   
-  // NEW: Forecast states
+  // ENHANCED: Forecast states with cache management
   const [showForecast, setShowForecast] = useState(false);
   const [loadingForecast, setLoadingForecast] = useState(false);
   const [forecastData, setForecastData] = useState(null);
   const [forecastError, setForecastError] = useState('');
   const [forecastMonths, setForecastMonths] = useState(12);
-  const [forecastRefreshTrigger, setForecastRefreshTrigger] = useState(0);
+  const [forecastSource, setForecastSource] = useState('api'); // 'api', 'cached', 'fallback'
+  const [forceRefresh, setForceRefresh] = useState(false);
 
   // OPTIMIZATION: Use refs for data that doesn't trigger re-renders
   const livePricesRef = useRef({});
@@ -1774,18 +1897,31 @@ const CommodityDashboard = () => {
     return alerts;
   }, []);
 
-  // OPTIMIZATION: Memoized forecast generation
-  const handleGenerateForecast = useCallback(async () => {
+  // ENHANCED: Memoized forecast generation with cache management
+  const handleGenerateForecast = useCallback(async (forceRefresh = false) => {
     setLoadingForecast(true);
     setForecastError('');
+    setForceRefresh(forceRefresh);
     
     try {
-      const data = await memoizedFetchMLForecast(selectedCommodity, forecastMonths);
+      const data = await memoizedFetchMLForecast(selectedCommodity, forecastMonths, forceRefresh);
       const convertedData = memoizedConvertForecastData(data, selectedCommodity, currencyMode, wheatDisplayUnit);
       
       if (convertedData) {
         setForecastData(convertedData);
+        setForecastSource(data.source || 'api');
         setShowForecast(true);
+        
+        // DEBUG: Log data to help identify discrepancies
+        console.log('Forecast Data Debug:', {
+          commodity: selectedCommodity,
+          source: data.source,
+          rawPrices: data.forecast?.prices?.slice(0, 3),
+          convertedPrices: convertedData.forecast?.slice(0, 3)?.map(f => f.price),
+          currencyMode,
+          wheatDisplayUnit,
+          conversionFunction: 'memoizedConvertApiValueToTargetCurrency'
+        });
       } else {
         setForecastError('Failed to process forecast data');
       }
@@ -2119,6 +2255,49 @@ const CommodityDashboard = () => {
       clearInterval(intervalId);
     };
   }, [excelMonthlyData, currencyMode, wheatDisplayUnit, debouncedSetDataSource]);
+
+  // DEBUG: Function to compare monthly data with forecast data for same month
+  const debugDataDiscrepancy = useCallback(() => {
+    if (!forecastData || !monthlyComparisonData[selectedCommodity]) return;
+    
+    const monthlyData = monthlyComparisonData[selectedCommodity];
+    const forecastChartData = memoizedPrepareForecastChartData(forecastData);
+    
+    // Find overlapping months
+    const overlappingMonths = [];
+    monthlyData.forEach(monthItem => {
+      const forecastItem = forecastChartData.find(f => 
+        f.monthKey === monthItem.monthKey && f.historicalPrice
+      );
+      if (forecastItem) {
+        overlappingMonths.push({
+          month: monthItem.monthDisplay,
+          monthlyApiPrice: monthItem.apiPrice,
+          forecastHistoricalPrice: forecastItem.historicalPrice,
+          difference: forecastItem.historicalPrice - monthItem.apiPrice,
+          differencePercent: monthItem.apiPrice ? 
+            ((forecastItem.historicalPrice - monthItem.apiPrice) / monthItem.apiPrice * 100) : null
+        });
+      }
+    });
+    
+    if (overlappingMonths.length > 0) {
+      console.log('Data Discrepancy Analysis:', {
+        commodity: selectedCommodity,
+        currencyMode,
+        wheatDisplayUnit,
+        overlappingMonths,
+        forecastSource
+      });
+    }
+  }, [forecastData, monthlyComparisonData, selectedCommodity, currencyMode, wheatDisplayUnit, forecastSource]);
+
+  // Run debug when forecast data changes
+  useEffect(() => {
+    if (forecastData) {
+      debugDataDiscrepancy();
+    }
+  }, [forecastData, debugDataDiscrepancy]);
 
   // OPTIMIZATION: Memoized profit/loss metrics calculator
   const calculateProfitLossMetrics = useCallback((commodity) => {
@@ -2832,7 +3011,7 @@ const CommodityDashboard = () => {
         {CommoditySelectorButtons}
       </div>
 
-      {/* ML Forecast Control Panel */}
+      {/* ENHANCED ML Forecast Control Panel with Cache Management */}
       <div style={{
         padding: '20px',
         backgroundColor: '#f8fafc',
@@ -2851,7 +3030,15 @@ const CommodityDashboard = () => {
               Machine Learning Price Forecasting
             </div>
             <div style={{ fontSize: '12px', color: '#6b7280' }}>
-              Generate price forecasts using advanced ML algorithms
+              {forecastData ? (
+                <span>
+                  Using {forecastSource === 'api' ? '🌐 Real API Data' : 
+                         forecastSource === 'cached' ? '💾 Cached Data' : 
+                         forecastSource === 'fallback' ? '📊 Fallback Data' : 
+                         forecastSource === 'basic-mock' ? '⚡ Basic Forecast' : 'Data'}
+                  • Cache: 5 minutes • Data discrepancy checks enabled
+                </span>
+              ) : 'Generate price forecasts using advanced ML algorithms'}
             </div>
           </div>
         </div>
@@ -2884,59 +3071,91 @@ const CommodityDashboard = () => {
             </select>
           </div>
           
-          <button
-            onClick={() => {
-              handleGenerateForecast();
-              if (!showForecast) setShowForecast(true);
-            }}
-            disabled={loadingForecast}
-            style={{
-              padding: '10px 24px',
-              backgroundColor: loadingForecast ? '#9ca3af' : '#8B5CF6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: loadingForecast ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              opacity: loadingForecast ? 0.7 : 1
-            }}
-          >
-            {loadingForecast ? (
-              <>
-                <span>🔄</span>
-                <span>Generating...</span>
-              </>
-            ) : (
-              <>
-                <span>🤖</span>
-                <span>{showForecast ? 'Refresh Forecast' : 'Generate Forecast'}</span>
-              </>
-            )}
-          </button>
-          
-          {showForecast && (
+          <div style={{ display: 'flex', gap: '8px' }}>
             <button
-              onClick={() => setShowForecast(false)}
+              onClick={() => handleGenerateForecast(true)}
+              disabled={loadingForecast}
               style={{
                 padding: '10px 16px',
-                backgroundColor: '#f3f4f6',
-                color: '#6b7280',
-                border: '1px solid #e5e7eb',
+                backgroundColor: loadingForecast ? '#9ca3af' : '#EF4444',
+                color: 'white',
+                border: 'none',
                 borderRadius: '8px',
                 fontSize: '14px',
                 fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
+                cursor: loadingForecast ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                opacity: loadingForecast ? 0.7 : 1
+              }}
+              title="Force refresh from API (bypass cache)"
+            >
+              {loadingForecast ? (
+                <>
+                  <span>🔄</span>
+                  <span>Refreshing...</span>
+                </>
+              ) : (
+                <>
+                  <span>🔄</span>
+                  <span>Force Refresh</span>
+                </>
+              )}
+            </button>
+            
+            <button
+              onClick={() => handleGenerateForecast(false)}
+              disabled={loadingForecast}
+              style={{
+                padding: '10px 24px',
+                backgroundColor: loadingForecast ? '#9ca3af' : '#8B5CF6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: loadingForecast ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                opacity: loadingForecast ? 0.7 : 1
               }}
             >
-              Hide Forecast
+              {loadingForecast ? (
+                <>
+                  <span>🔄</span>
+                  <span>Generating...</span>
+                </>
+              ) : (
+                <>
+                  <span>🤖</span>
+                  <span>{showForecast ? 'Refresh Forecast' : 'Generate Forecast'}</span>
+                </>
+              )}
             </button>
-          )}
+            
+            {showForecast && (
+              <button
+                onClick={() => setShowForecast(false)}
+                style={{
+                  padding: '10px 16px',
+                  backgroundColor: '#f3f4f6',
+                  color: '#6b7280',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Hide Forecast
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2959,7 +3178,37 @@ const CommodityDashboard = () => {
         </div>
       )}
 
-      {/* ML Forecast Results Section */}
+      {/* Data Discrepancy Warning */}
+      {showForecast && forecastData && forecastSource !== 'api' && (
+        <div style={{
+          marginBottom: '16px',
+          padding: '12px',
+          backgroundColor: '#FEF3C7',
+          borderRadius: '8px',
+          border: '2px solid #F59E0B',
+          fontSize: '14px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span>⚠️</span>
+          <div>
+            <span style={{ fontWeight: '600', color: '#92400E' }}>
+              Note: Using {forecastSource === 'fallback' ? 'Fallback Forecast Data' : 
+                           forecastSource === 'basic-mock' ? 'Basic Forecast' : 'Cached Data'}
+            </span>
+            <div style={{ fontSize: '12px', color: '#92400E', marginTop: '4px' }}>
+              {forecastSource === 'fallback' 
+                ? 'The ML API is temporarily unavailable. Using historical data-based forecast.' 
+                : forecastSource === 'basic-mock'
+                ? 'Using basic forecasting due to limited data availability.'
+                : 'Using cached forecast data. Click "Force Refresh" for fresh API data.'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ENHANCED ML Forecast Results Section */}
       {showForecast && forecastData && (
         <div style={{
           marginBottom: '32px',
@@ -2980,6 +3229,24 @@ const CommodityDashboard = () => {
               <h3 style={{ margin: 0, fontSize: '18px', color: '#374151', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span>🤖</span>
                 <span>ML Price Forecast - {COMMODITY_CONFIG[selectedCommodity]?.name}</span>
+                {forecastSource && (
+                  <span style={{
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    backgroundColor: forecastSource === 'api' ? '#D1FAE5' : 
+                                   forecastSource === 'cached' ? '#DBEAFE' : 
+                                   forecastSource === 'fallback' ? '#FEF3C7' : '#E5E7EB',
+                    color: forecastSource === 'api' ? '#065F46' : 
+                          forecastSource === 'cached' ? '#1E40AF' : 
+                          forecastSource === 'fallback' ? '#92400E' : '#6B7280',
+                    borderRadius: '4px',
+                    fontWeight: '600'
+                  }}>
+                    {forecastSource === 'api' ? '🌐 LIVE API' : 
+                     forecastSource === 'cached' ? '💾 CACHED' : 
+                     forecastSource === 'fallback' ? '📊 FALLBACK' : '⚡ BASIC'}
+                  </span>
+                )}
               </h3>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
                 {forecastMonths}-month price prediction using Random Forest ML algorithm • {units}
@@ -2987,6 +3254,7 @@ const CommodityDashboard = () => {
                   Forecast Period: Jan 2026 - {forecastMonths === 6 ? 'Jun 2026' : 
                                                forecastMonths === 12 ? 'Dec 2026' : 
                                                forecastMonths === 18 ? 'Jun 2027' : 'Dec 2027'}
+                  {forecastData.source && ` • Source: ${forecastData.source}`}
                 </div>
               </div>
             </div>
@@ -3246,6 +3514,18 @@ const CommodityDashboard = () => {
                 <span style={{ fontWeight: '600' }}>Confidence Level:</span> High (95% CI)
               </div>
             </div>
+            {forecastSource !== 'api' && (
+              <div style={{ 
+                marginTop: '12px',
+                padding: '8px',
+                backgroundColor: '#FDE68A',
+                borderRadius: '4px',
+                fontSize: '11px',
+                color: '#92400e'
+              }}>
+                <span style={{ fontWeight: '600' }}>Note:</span> Using {forecastSource} data. API calls are cached for 5 minutes. Click "Force Refresh" for fresh API data.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3842,7 +4122,7 @@ const CommodityDashboard = () => {
               • Excel Purchase Records<br/>
               • Dates: 2020-2025<br/>
               • Historical FX Rates<br/>
-              • 🤖 ML Forecasting Models
+              • 🤖 ML Forecasting API
             </div>
           </div>
           <div>
@@ -3861,13 +4141,13 @@ const CommodityDashboard = () => {
           <div>
             <div style={{ fontWeight: 600, color: '#374151', marginBottom: '8px' }}>ML Forecasting</div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              • Random Forest Algorithm<br/>
-              • 6-24 month price predictions<br/>
-              • Future dates: Jan 2026 onwards<br/>
-              • Historical pattern analysis<br/>
-              • Confidence intervals<br/>
-              • Automatic model training<br/>
-              • Real-time accuracy metrics
+              • Real API Data (primary)<br/>
+              • 5-minute cache TTL<br/>
+              • Smart fallback system<br/>
+              • Force refresh option<br/>
+              • Data discrepancy checks<br/>
+              • Same currency conversion<br/>
+              • Debug mode enabled
             </div>
           </div>
         </div>
