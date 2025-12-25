@@ -1,7 +1,7 @@
-// src/components/CommodityNewsSection.jsx
+// src/components/CommodityNewsSection.jsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect, useCallback } from 'react';
 
-const API_BASE_URL = 'https://ml-mhwe.onrender.com/api/forecast';
+const API_BASE_URL = 'https://ml-mhwe.onrender.com/api'; // ✅ FIXED: Root API base
 
 const COMMODITY_DISPLAY_NAMES = {
   wheat: 'Wheat CBOT',
@@ -12,8 +12,7 @@ const COMMODITY_DISPLAY_NAMES = {
   crude_palm: 'Brent Crude Oil',
 };
 
-const PLACEHOLDER_IMG =
-  'https://via.placeholder.com/350x180/CCCCCC/333333?text=NEWS';
+const PLACEHOLDER_IMG = 'https://via.placeholder.com/350x180/CCCCCC/333333?text=NEWS';
 
 const CommodityNewsSection = ({ selectedCommodity }) => {
   const [news, setNews] = useState([]);
@@ -23,7 +22,7 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
   const [source, setSource] = useState('');
   const [commodity, setCommodity] = useState(selectedCommodity || 'wheat');
 
-  // keep local commodity in sync with parent
+  // Sync with parent selectedCommodity
   useEffect(() => {
     if (selectedCommodity) {
       setCommodity(selectedCommodity);
@@ -33,54 +32,44 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
     }
   }, [selectedCommodity]);
 
-  const fetchNews = useCallback(
-    async (commodityKey, forceRefresh = false) => {
-      if (!commodityKey) return;
-      setLoading(true);
-      setError('');
+  const fetchNews = useCallback(async (commodityKey, forceRefresh = false) => {
+    if (!commodityKey) return;
+    setLoading(true);
+    setError('');
 
-      try {
-        const url = `${API_BASE_URL}/news/${commodityKey}${
-          forceRefresh ? '?refresh=true' : ''
-        }`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
+    try {
+      const url = `${API_BASE_URL}/news/${commodityKey}${forceRefresh ? '?refresh=true' : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
 
-        const data = await response.json();
+      const data = await response.json();
 
-        setNews(data.news || []);
-        setLastUpdated(
-          data.lastUpdated || new Date().toLocaleTimeString()
-        );
-        setSource(data.source || 'API');
+      setNews(data.news || []);
+      setLastUpdated(data.lastUpdated || new Date().toLocaleTimeString());
+      setSource(data.source || 'API');
+      setCommodity(data.commodity || commodityKey);
 
-        if (data.isFallback) {
-          setError('Using fallback news data (scraping failed)');
-        }
-      } catch (err) {
-        console.error('Failed to fetch news:', err);
-        setError('Could not load latest news. Check API connection.');
-        setNews([]);
-      } finally {
-        setLoading(false);
+      if (data.isFallback) {
+        setError('Using fallback news data (scraping temporarily unavailable)');
       }
-    },
-    []
-  );
+    } catch (err) {
+      console.error('Failed to fetch news:', err);
+      setError('Could not load latest news. API may be temporarily unavailable.');
+      setNews([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // when commodity changes via dropdown, clear and refetch
+  // Auto-fetch when commodity changes
   useEffect(() => {
     if (commodity) {
-      setNews([]);
-      setLastUpdated(null);
-      setError('');
       fetchNews(commodity);
     }
   }, [commodity, fetchNews]);
 
   const handleRefreshNews = () => {
     if (commodity && !loading) {
-      setNews([]);
       fetchNews(commodity, true);
     }
   };
@@ -90,11 +79,10 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  // GLOBAL loading state (no news yet for this commodity)
+  // Global loading state
   if (loading && news.length === 0) {
     return (
       <div
-        key={commodity}
         style={{
           padding: '40px',
           textAlign: 'center',
@@ -108,15 +96,8 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
         <div style={{ fontWeight: '600', color: '#374151' }}>
           Loading market news...
         </div>
-        <div
-          style={{
-            color: '#6b7280',
-            fontSize: '14px',
-            marginTop: '8px',
-          }}
-        >
-          Fetching latest updates for{' '}
-          {COMMODITY_DISPLAY_NAMES[commodity] || commodity}
+        <div style={{ color: '#6b7280', fontSize: '14px', marginTop: '8px' }}>
+          Fetching latest updates for {COMMODITY_DISPLAY_NAMES[commodity] || commodity}
         </div>
       </div>
     );
@@ -124,16 +105,15 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
 
   return (
     <div
-      key={commodity} // force remount on commodity change
       style={{
         marginTop: '32px',
         padding: '24px',
         backgroundColor: '#f8fafc',
         borderRadius: '12px',
-        border: '2px solid '
+        border: '2px solid #e5e7eb',
       }}
     >
-      {/* Header + dropdown */}
+      {/* Header + Controls */}
       <div
         style={{
           display: 'flex',
@@ -141,6 +121,7 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
           alignItems: 'center',
           marginBottom: '20px',
           gap: '16px',
+          flexWrap: 'wrap',
         }}
       >
         <div>
@@ -155,17 +136,13 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
             }}
           >
             <span>📰</span>
-            <span>
-              Latest Market News –{' '}
-              {COMMODITY_DISPLAY_NAMES[commodity] || commodity}
-            </span>
+            <span>Latest Market News – {COMMODITY_DISPLAY_NAMES[commodity] || commodity}</span>
             {source && (
               <span
                 style={{
                   fontSize: '11px',
                   padding: '2px 8px',
-                  backgroundColor:
-                    source === 'Barchart' ? '#DBEAFE' : '#FEF3C7',
+                  backgroundColor: source === 'Barchart' ? '#DBEAFE' : '#FEF3C7',
                   color: source === 'Barchart' ? '#1E40AF' : '#92400E',
                   borderRadius: '4px',
                   fontWeight: '600',
@@ -175,13 +152,7 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
               </span>
             )}
           </h3>
-          <div
-            style={{
-              fontSize: '12px',
-              color: '#6b7280',
-              marginTop: '4px',
-            }}
-          >
+          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
             Real-time updates from Barchart.com •{' '}
             {lastUpdated
               ? `Last updated: ${lastUpdated}`
@@ -191,20 +162,19 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
           </div>
         </div>
 
-        {/* Dropdown + refresh */}
+        {/* Dropdown + Refresh Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <select
             value={commodity}
-            onChange={(e) => {
-              setCommodity(e.target.value);
-            }}
+            onChange={(e) => setCommodity(e.target.value)}
             style={{
-              padding: '8px 10px',
+              padding: '8px 12px',
               borderRadius: '8px',
               border: '1px solid #d1d5db',
               fontSize: '14px',
               backgroundColor: 'white',
               color: '#374151',
+              minWidth: '160px',
             }}
           >
             <option value="wheat">Wheat CBOT</option>
@@ -233,12 +203,12 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
               opacity: loading ? 0.7 : 1,
             }}
           >
-            {loading ? 'Refreshing...' : 'Get Latest News'}
+            {loading ? '⟳ Refreshing...' : '⟳ Latest News'}
           </button>
         </div>
       </div>
 
-      {/* Error */}
+      {/* Error State */}
       {error && (
         <div
           style={{
@@ -259,7 +229,7 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
         </div>
       )}
 
-      {/* News grid */}
+      {/* News Grid */}
       {news.length > 0 ? (
         <div
           style={{
@@ -269,12 +239,8 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
             marginTop: '16px',
           }}
         >
-          {news.map((item) => (
-            <NewsCard
-              key={item.link || item.title}
-              item={item}
-              onOpen={handleOpenNews}
-            />
+          {news.map((item, index) => (
+            <NewsCard key={`${item.link || item.title}-${index}`} item={item} onOpen={handleOpenNews} />
           ))}
         </div>
       ) : (
@@ -286,26 +252,15 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
               backgroundColor: '#f9fafb',
               borderRadius: '8px',
               border: '1px dashed #e5e7eb',
+              marginTop: '16px',
             }}
           >
-            <div style={{ fontSize: '20px', marginBottom: '12px' }}>📰</div>
-            <div
-              style={{
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: '8px',
-              }}
-            >
+            <div style={{ fontSize: '24px', marginBottom: '12px' }}>📰</div>
+            <div style={{ fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
               No news available
             </div>
-            <div
-              style={{
-                color: '#6b7280',
-                fontSize: '14px',
-                marginBottom: '16px',
-              }}
-            >
-              No recent news found for {COMMODITY_DISPLAY_NAMES[commodity]}
+            <div style={{ color: '#6b7280', fontSize: '14px', marginBottom: '16px' }}>
+              No recent news found for {COMMODITY_DISPLAY_NAMES[commodity] || commodity}
             </div>
             <button
               onClick={handleRefreshNews}
@@ -320,7 +275,7 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
                 cursor: 'pointer',
               }}
             >
-              ↻ Retry
+              ⟳ Try Again
             </button>
           </div>
         )
@@ -330,7 +285,7 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
       {news.length > 0 && (
         <div
           style={{
-            marginTop: '20px',
+            marginTop: '24px',
             padding: '12px',
             backgroundColor: '#F0F9FF',
             borderRadius: '8px',
@@ -340,33 +295,41 @@ const CommodityNewsSection = ({ selectedCommodity }) => {
             textAlign: 'center',
           }}
         >
-          News data scraped from Barchart.com • Click any card to read the full
-          article • Updates every 5 minutes
+          News data from Barchart.com • Click cards to read full articles • Cache refreshes every 5 minutes
         </div>
       )}
     </div>
   );
 };
 
-const NewsCard = React.memo(function NewsCard({ item, onOpen }) {
+const NewsCard = React.memo(({ item, onOpen }) => {
   const [imgError, setImgError] = useState(false);
 
   const rawUrl = item.imageUrl?.trim();
-  const src = !rawUrl || imgError ? PLACEHOLDER_IMG : rawUrl; // treat empty/whitespace as no image[web:89]
+  const src = (!rawUrl || imgError) ? PLACEHOLDER_IMG : rawUrl;
 
   return (
     <div
       onClick={() => onOpen(item.link)}
       style={{
         backgroundColor: 'white',
-        borderRadius: '10px',
+        borderRadius: '12px',
         border: '1px solid #e5e7eb',
         overflow: 'hidden',
         cursor: 'pointer',
-        transition: 'transform 0.2s, box-shadow 0.2s',
+        transition: 'all 0.2s ease',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
       }}
     >
-      {/* Image with placeholder fallback */}
+      {/* Image */}
       <div
         style={{
           height: '180px',
@@ -386,6 +349,7 @@ const NewsCard = React.memo(function NewsCard({ item, onOpen }) {
             objectFit: 'cover',
           }}
           onError={() => setImgError(true)}
+          loading="lazy"
         />
       </div>
 
@@ -406,7 +370,7 @@ const NewsCard = React.memo(function NewsCard({ item, onOpen }) {
               fontWeight: '600',
               backgroundColor: '#EFF6FF',
               padding: '4px 10px',
-              borderRadius: '4px',
+              borderRadius: '6px',
             }}
           >
             {item.symbol || 'MARKET'}
@@ -421,8 +385,12 @@ const NewsCard = React.memo(function NewsCard({ item, onOpen }) {
             margin: '0 0 10px 0',
             fontSize: '16px',
             fontWeight: '600',
-            color: '#374151',
+            color: '#1f2937',
             lineHeight: '1.4',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
           }}
         >
           {item.title}
@@ -446,5 +414,7 @@ const NewsCard = React.memo(function NewsCard({ item, onOpen }) {
     </div>
   );
 });
+
+NewsCard.displayName = 'NewsCard';
 
 export default CommodityNewsSection;
