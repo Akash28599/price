@@ -1,4 +1,4 @@
-// src/components/CommodityDashboard.jsx - COMPLETE FIXED VERSION WITH REAL API FORECASTING
+// src/components/CommodityDashboard.jsx - COMPLETE FIXED VERSION WITH ORIGINAL API PRICES FOR FORECAST
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -1513,7 +1513,7 @@ function generateBasicMockForecast(commodity, months) {
   };
 }
 
-// OPTIMIZATION: Memoized forecast data converter - FIXED: Use same currency conversion as monthly data
+// UPDATED: Forecast data converter - NO CONVERSION, KEEP ORIGINAL API PRICES
 const memoizedConvertForecastData = (() => {
   const cache = new Map();
   
@@ -1523,51 +1523,38 @@ const memoizedConvertForecastData = (() => {
     const cacheKey = `${forecastData.commodity}_${currencyMode}_${wheatDisplayUnit}_${forecastData.forecast_months}_${forecastData.source || 'api'}`;
     if (cache.has(cacheKey)) return cache.get(cacheKey);
     
-    const targetCurrency = currencyMode === 'original' 
-      ? COMMODITY_CURRENCIES[commodity] 
-      : 'NGN';
-    
-    // CRITICAL FIX: Use the SAME conversion function as monthly comparison data
+    // CRITICAL CHANGE: No currency conversion for forecast - keep original API prices
     const historical = forecastData.historical || { dates: [], prices: [] };
     const convertedHistorical = historical.prices.map((price, index) => {
-      const date = historical.dates[index];
-      const monthKey = memoizedGetMonthKey(date);
-      // Use the SAME conversion logic as memoizedConvertApiValueToTargetCurrency
       return {
-        date: date,
-        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        date: historical.dates[index],
+        price: price, // Keep original API price
         type: 'historical'
       };
     });
     
     const testPredictions = forecastData.test_predictions || { dates: [], actual: [], predicted: [] };
     const convertedTestActual = testPredictions.actual.map((price, index) => {
-      const date = testPredictions.dates[index];
-      const monthKey = memoizedGetMonthKey(date);
       return {
-        date: date,
-        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        date: testPredictions.dates[index],
+        price: price, // Keep original API price
         type: 'test_actual'
       };
     });
     
     const convertedTestPredicted = testPredictions.predicted.map((price, index) => {
-      const date = testPredictions.dates[index];
-      const monthKey = memoizedGetMonthKey(date);
       return {
-        date: date,
-        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        date: testPredictions.dates[index],
+        price: price, // Keep original API price
         type: 'test_predicted'
       };
     });
     
     const forecast = forecastData.forecast || { dates: [], prices: [] };
     const convertedForecast = forecast.prices.map((price, index) => {
-      const date = forecast.dates[index];
-      const monthKey = memoizedGetMonthKey(date);
       return {
-        date: date,
-        price: memoizedConvertApiValueToTargetCurrency(commodity, price, targetCurrency, monthKey, wheatDisplayUnit, currencyMode),
+        date: forecast.dates[index],
+        price: price, // Keep original API price
         type: 'forecast'
       };
     });
@@ -1663,13 +1650,14 @@ const memoizedPrepareForecastChartData = (() => {
   };
 })();
 
-// OPTIMIZATION: Forecast Tooltip as React.memo component
+// UPDATED: Forecast Tooltip with original units
 const ForecastTooltip = React.memo(({ active, payload, label, commodity, currencyMode, wheatDisplayUnit }) => {
   if (!active || !payload || !payload.length) return null;
   
   const data = payload[0].payload;
-  const units = memoizedGetUnitsByCommodity(commodity, currencyMode, wheatDisplayUnit);
-  const dec = memoizedGetDecimalsForDisplay(commodity, currencyMode, wheatDisplayUnit);
+  // Use original API units for forecast display
+  const originalUnits = memoizedGetOriginalUnitsForLivePrices(commodity);
+  const originalDecimals = memoizedGetOriginalDecimalsForDisplay(commodity);
   
   let price;
   let typeLabel;
@@ -1730,7 +1718,7 @@ const ForecastTooltip = React.memo(({ active, payload, label, commodity, currenc
             color: color,
             fontSize: '16px' 
           }}>
-            {price?.toFixed(dec)} {units}
+            {price?.toFixed(originalDecimals)} {originalUnits}
           </span>
         </div>
       </div>
@@ -1745,6 +1733,10 @@ const ForecastTooltip = React.memo(({ active, payload, label, commodity, currenc
           color: '#6b7280'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Units:</span>
+            <span style={{ fontWeight: '600' }}>{originalUnits} (API Format)</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
             <span>Confidence:</span>
             <span style={{ fontWeight: '600' }}>High (ML Model)</span>
           </div>
@@ -1920,7 +1912,7 @@ const CommodityDashboard = () => {
           convertedPrices: convertedData.forecast?.slice(0, 3)?.map(f => f.price),
           currencyMode,
           wheatDisplayUnit,
-          conversionFunction: 'memoizedConvertApiValueToTargetCurrency'
+          conversionFunction: 'NO CONVERSION - ORIGINAL API PRICES'
         });
       } else {
         setForecastError('Failed to process forecast data');
@@ -3036,9 +3028,9 @@ const CommodityDashboard = () => {
                          forecastSource === 'cached' ? '💾 Cached Data' : 
                          forecastSource === 'fallback' ? '📊 Fallback Data' : 
                          forecastSource === 'basic-mock' ? '⚡ Basic Forecast' : 'Data'}
-                  • Cache: 5 minutes • Data discrepancy checks enabled
+                  • Cache: 5 minutes • Displaying ORIGINAL API prices (no conversions)
                 </span>
-              ) : 'Generate price forecasts using advanced ML algorithms'}
+              ) : 'Generate price forecasts using advanced ML algorithms (showing original API units)'}
             </div>
           </div>
         </div>
@@ -3048,7 +3040,25 @@ const CommodityDashboard = () => {
             <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151' }}>
               Forecast Period:
             </span>
-           
+            <select
+              value={forecastMonths}
+              onChange={(e) => setForecastMonths(parseInt(e.target.value))}
+              style={{
+                padding: '8px 12px',
+                backgroundColor: 'white',
+                border: '1px solid #3B82F6',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: '600',
+                color: '#1e40af',
+                cursor: 'pointer'
+              }}
+            >
+              <option value={6}>6 months</option>
+              <option value={12}>12 months</option>
+              <option value={18}>18 months</option>
+              <option value={24}>24 months</option>
+            </select>
           </div>
           
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -3188,7 +3198,7 @@ const CommodityDashboard = () => {
         </div>
       )}
 
-      {/* ENHANCED ML Forecast Results Section */}
+      {/* ENHANCED ML Forecast Results Section - SHOWING ORIGINAL API PRICES */}
       {showForecast && forecastData && (
         <div style={{
           marginBottom: '32px',
@@ -3229,7 +3239,10 @@ const CommodityDashboard = () => {
                 )}
               </h3>
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                {forecastMonths}-month price prediction using Random Forest ML algorithm • {units}
+                {forecastMonths}-month price prediction using Random Forest ML algorithm • 
+                <span style={{ fontWeight: '600', color: '#8B5CF6', marginLeft: '4px' }}>
+                  {memoizedGetOriginalUnitsForLivePrices(selectedCommodity)} (Original API Units - No Conversion)
+                </span>
                 <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
                   Forecast Period: Jan 2026 - {forecastMonths === 6 ? 'Jun 2026' : 
                                                forecastMonths === 12 ? 'Dec 2026' : 
@@ -3293,7 +3306,7 @@ const CommodityDashboard = () => {
             )}
           </div>
           
-          {/* Forecast Chart */}
+          {/* Forecast Chart - SHOWING ORIGINAL API PRICES */}
           <div style={{ height: '400px', marginBottom: '24px' }}>
             {forecastChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -3322,10 +3335,10 @@ const CommodityDashboard = () => {
                     domain={['dataMin', 'dataMax']}
                   />
                   <YAxis 
-                    tickFormatter={value => `${value?.toFixed(dec)}`}
+                    tickFormatter={value => `${value?.toFixed(memoizedGetOriginalDecimalsForDisplay(selectedCommodity))}`}
                     tick={{ fontSize: 12 }}
                     label={{ 
-                      value: units,
+                      value: memoizedGetOriginalUnitsForLivePrices(selectedCommodity),
                       angle: -90,
                       position: 'insideLeft',
                       offset: 10,
@@ -3397,7 +3410,7 @@ const CommodityDashboard = () => {
             )}
           </div>
           
-          {/* Forecast Summary */}
+          {/* Forecast Summary - USING ORIGINAL API UNITS */}
           {forecastData.forecast.length > 0 && (
             <div style={{
               display: 'grid',
@@ -3415,10 +3428,10 @@ const CommodityDashboard = () => {
                   <span>Next Month Forecast (Jan 2026)</span>
                 </div>
                 <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#8B5CF6' }}>
-                  {forecastData.forecast[0]?.price?.toFixed(dec)} {units}
+                  {forecastData.forecast[0]?.price?.toFixed(memoizedGetOriginalDecimalsForDisplay(selectedCommodity))} {memoizedGetOriginalUnitsForLivePrices(selectedCommodity)}
                 </div>
                 <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
-                  January 2026
+                  January 2026 • Original API Units
                 </div>
               </div>
               
@@ -3433,10 +3446,10 @@ const CommodityDashboard = () => {
                   <span>6-Month Average</span>
                 </div>
                 <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#10B981' }}>
-                  {(forecastData.forecast.slice(0, 6).reduce((sum, d) => sum + d.price, 0) / Math.min(6, forecastData.forecast.length)).toFixed(dec)} {units}
+                  {(forecastData.forecast.slice(0, 6).reduce((sum, d) => sum + d.price, 0) / Math.min(6, forecastData.forecast.length)).toFixed(memoizedGetOriginalDecimalsForDisplay(selectedCommodity))} {memoizedGetOriginalUnitsForLivePrices(selectedCommodity)}
                 </div>
                 <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>
-                  Avg of Jan 2026 - Jun 2026
+                  Avg of Jan 2026 - Jun 2026 • API Format
                 </div>
               </div>
               
@@ -3477,6 +3490,9 @@ const CommodityDashboard = () => {
                 <span style={{ fontWeight: '600' }}>Algorithm:</span> Random Forest Regressor
               </div>
               <div>
+                <span style={{ fontWeight: '600' }}>Display Units:</span> {memoizedGetOriginalUnitsForLivePrices(selectedCommodity)} (Original API)
+              </div>
+              <div>
                 <span style={{ fontWeight: '600' }}>Features:</span> Lag prices, rolling stats, seasonal patterns
               </div>
               <div>
@@ -3491,21 +3507,24 @@ const CommodityDashboard = () => {
                 <span style={{ fontWeight: '600' }}>Training Period:</span> Jan 2020 - Dec 2025
               </div>
               <div>
+                <span style={{ fontWeight: '600' }}>Data Format:</span> Original API Prices (No Conversion)
+              </div>
+              <div>
                 <span style={{ fontWeight: '600' }}>Confidence Level:</span> High (95% CI)
               </div>
             </div>
-            {forecastSource !== 'api' && (
-              <div style={{ 
-                marginTop: '12px',
-                padding: '8px',
-                backgroundColor: '#FDE68A',
-                borderRadius: '4px',
-                fontSize: '11px',
-                color: '#92400e'
-              }}>
-                <span style={{ fontWeight: '600' }}>Note:</span> Using {forecastSource} data. API calls are cached for 5 minutes. Click "Force Refresh" for fresh API data.
-              </div>
-            )}
+            <div style={{ 
+              marginTop: '12px',
+              padding: '8px',
+              backgroundColor: '#FDE68A',
+              borderRadius: '4px',
+              fontSize: '11px',
+              color: '#92400e'
+            }}>
+              <span style={{ fontWeight: '600' }}>Important:</span> Forecast shows original API prices in {memoizedGetOriginalUnitsForLivePrices(selectedCommodity)} format. 
+              No currency or unit conversions applied for accurate market comparison.
+              {forecastSource !== 'api' && ' API calls are cached for 5 minutes. Click "Force Refresh" for fresh API data.'}
+            </div>
           </div>
         </div>
       )}
@@ -4086,8 +4105,6 @@ const CommodityDashboard = () => {
       </div>
 
       {/* Footer */}
-      
-        
       <CommodityNewsSection/>
     </div>
   );
