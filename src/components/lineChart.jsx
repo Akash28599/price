@@ -1776,7 +1776,7 @@ const CommodityDashboard = () => {
   const [loadingForecast, setLoadingForecast] = useState(false);
   const [forecastData, setForecastData] = useState(null);
   const [forecastError, setForecastError] = useState('');
-  const [forecastMonths, setForecastMonths] = useState(12);
+  const [forecastMonths, setForecastMonths] = useState(24);
   const [forecastSource, setForecastSource] = useState('api'); // 'api', 'cached', 'fallback'
   const [forceRefresh, setForceRefresh] = useState(false);
 
