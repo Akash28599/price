@@ -3474,58 +3474,7 @@ const CommodityDashboard = () => {
           )}
           
           {/* Model Information */}
-          <div style={{
-            marginTop: '16px',
-            padding: '16px',
-            backgroundColor: '#fef3c7',
-            borderRadius: '8px',
-            border: '1px solid #fbbf24'
-          }}>
-            <div style={{ fontSize: '12px', color: '#92400e', fontWeight: '600', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>🔍</span>
-              <span>ML Model Information</span>
-            </div>
-            <div style={{ fontSize: '11px', color: '#92400e', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-              <div>
-                <span style={{ fontWeight: '600' }}>Algorithm:</span> Random Forest Regressor
-              </div>
-              <div>
-                <span style={{ fontWeight: '600' }}>Display Units:</span> {memoizedGetOriginalUnitsForLivePrices(selectedCommodity)} (Original API)
-              </div>
-              <div>
-                <span style={{ fontWeight: '600' }}>Features:</span> Lag prices, rolling stats, seasonal patterns
-              </div>
-              <div>
-                <span style={{ fontWeight: '600' }}>MAPE:</span> {forecastData.metrics?.mape?.toFixed(2)}%
-              </div>
-              <div>
-                <span style={{ fontWeight: '600' }}>Forecast Horizon:</span> {forecastMonths} months (Jan 2026 - {forecastMonths === 6 ? 'Jun 2026' : 
-                                                                                                                   forecastMonths === 12 ? 'Dec 2026' : 
-                                                                                                                   forecastMonths === 18 ? 'Jun 2027' : 'Dec 2027'})
-              </div>
-              <div>
-                <span style={{ fontWeight: '600' }}>Training Period:</span> Jan 2020 - Dec 2025
-              </div>
-              <div>
-                <span style={{ fontWeight: '600' }}>Data Format:</span> Original API Prices (No Conversion)
-              </div>
-              <div>
-                <span style={{ fontWeight: '600' }}>Confidence Level:</span> High (95% CI)
-              </div>
-            </div>
-            <div style={{ 
-              marginTop: '12px',
-              padding: '8px',
-              backgroundColor: '#FDE68A',
-              borderRadius: '4px',
-              fontSize: '11px',
-              color: '#92400e'
-            }}>
-              <span style={{ fontWeight: '600' }}>Important:</span> Forecast shows original API prices in {memoizedGetOriginalUnitsForLivePrices(selectedCommodity)} format. 
-              No currency or unit conversions applied for accurate market comparison.
-              {forecastSource !== 'api' && ' API calls are cached for 5 minutes. Click "Force Refresh" for fresh API data.'}
-            </div>
-          </div>
+          
         </div>
       )}
 
