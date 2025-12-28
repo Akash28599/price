@@ -3612,42 +3612,7 @@ const CommodityDashboard = () => {
           )}
           
           {/* Model Information */}
-          {forecastData.modelInfo && (
-            <div style={{
-              marginTop: '24px',
-              padding: '16px',
-              backgroundColor: '#f8fafc',
-              borderRadius: '8px',
-              border: '1px solid #e5e7eb'
-            }}>
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '12px' }}>
-                Model Information
-              </div>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-                gap: '12px',
-                fontSize: '12px'
-              }}>
-                <div>
-                  <span style={{ color: '#6b7280' }}>Algorithm:</span>
-                  <span style={{ fontWeight: '600', marginLeft: '8px' }}>{forecastData.modelInfo.algorithm}</span>
-                </div>
-                <div>
-                  <span style={{ color: '#6b7280' }}>Training Data:</span>
-                  <span style={{ fontWeight: '600', marginLeft: '8px' }}>{forecastData.modelInfo.training_years_2025}</span>
-                </div>
-                <div>
-                  <span style={{ color: '#6b7280' }}>Methods Used:</span>
-                  <span style={{ fontWeight: '600', marginLeft: '8px' }}>{forecastData.modelInfo.methods_used?.join(', ')}</span>
-                </div>
-                <div>
-                  <span style={{ color: '#6b7280' }}>Commodity Specific:</span>
-                  <span style={{ fontWeight: '600', marginLeft: '8px', color: '#10B981' }}>{forecastData.modelInfo.commodity_specific}</span>
-                </div>
-              </div>
-            </div>
-          )}
+         
         </div>
       )}
 
