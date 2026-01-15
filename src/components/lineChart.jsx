@@ -4192,7 +4192,7 @@ const CommodityDashboard = () => {
       </div>
 
       {/* Footer */}
-      <CommodityNewsSection/>
+      <CommodityNewsSection selectedCommodity={selectedCommodity} />
     </div>
   );
 };
