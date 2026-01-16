@@ -23,9 +23,17 @@ const COMMODITY_CONFIG = {
     supported: true,
     apiUrl: `https://ondemand.websol.barchart.com/getNews.json?apikey=${BARCHART_API_KEY}&sources=BCNEWS&symbols=ALH26&category=Commodities&keyword=aluminum&maxRecords=6&startDate=2026-01-01T00:00:00&displayType=headline&images=true&fields=id,headline,pubDate,source,images,preview,canonicalUrl`
   },
-  milling_wheat: { name: 'Milling Wheat', supported: false },
+  milling_wheat: { 
+    name: 'Milling Wheat', 
+    supported: true,
+    apiUrl: `https://ondemand.websol.barchart.com/getNews.json?apikey=${BARCHART_API_KEY}&sources=BCNEWS&category=Commodities&keyword=wheat&maxRecords=6&displayType=headline&images=true&fields=id,headline,pubDate,source,images,preview,canonicalUrl`
+  },
   palm: { name: 'Palm Oil', supported: false },
-  crude_palm: { name: 'Brent Crude Oil', supported: false }
+  crude_palm: { 
+    name: 'Brent Crude Oil', 
+    supported: true,
+    apiUrl: `https://ondemand.websol.barchart.com/getNews.json?apikey=${BARCHART_API_KEY}&sources=BCNEWS&symbols=CBH26&category=Commodities&keyword=crude%20oil&maxRecords=6&displayType=headline&images=true&fields=id,headline,pubDate,source,images,preview,canonicalUrl`
+  }
 };
 
 const PLACEHOLDER_IMG = 'https://via.placeholder.com/350x180/CCCCCC/333333?text=NEWS';
