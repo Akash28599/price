@@ -1,12 +1,11 @@
-import React, { useState } from "react";
-import CommodityPriceChart from "./components/lineChart";
+import React from "react";
 import AluminumTest from "./components/lineChart";
 
 
 const App = () => {
-  return(
-   
-   <AluminumTest/>
+  return (
+
+    <AluminumTest />
   )
 }
 

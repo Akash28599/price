@@ -334,7 +334,6 @@ const memoizedGetHistoricalFXRate = (() => {
 const BUSHEL_TO_KG_WHEAT = 27.2155;
 const TONNE_TO_KG = 1000;
 const LB_TO_KG = 0.45359237;
-const ALUMINUM_CAN_WEIGHT_KG = 0.013;
 const BARREL_TO_KG = 136.4;
 
 // Wheat display unit options
@@ -518,7 +517,6 @@ const memoizedGetMonthKey = (() => {
     'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
     'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12',
     'January': '01', 'February': '02', 'March': '03', 'April': '04',
-    'May': '05', 'June': '06', 'July': '07', 'August': '08',
     'September': '09', 'October': '10', 'November': '11', 'December': '12'
   };
   
@@ -596,7 +594,6 @@ const memoizedGetMonthDisplay = (() => {
 // OPTIMIZATION: Filter recent data once
 const filterRecentData = (data, maxYearsBack = 5) => {
   const currentYear = new Date().getFullYear();
-  const minYear = currentYear - maxYearsBack;
   
   return data.filter(item => {
     if (!item.monthKey) return false;
@@ -1921,7 +1918,6 @@ const CommodityDashboard = () => {
   const [currencyMode, setCurrencyMode] = useState('original');
   const [selectedCommodity, setSelectedCommodity] = useState(DEFAULT_CHART_COMMODITY);
   const [wheatDisplayUnit, setWheatDisplayUnit] = useState('usdPerKg');
-  const [commodityData, setCommodityData] = useState({});
   const [monthlyComparisonData, setMonthlyComparisonData] = useState({});
   const [livePrices, setLivePrices] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1938,7 +1934,6 @@ const CommodityDashboard = () => {
   const [forecastError, setForecastError] = useState('');
   const [forecastMonths, setForecastMonths] = useState(24);
   const [forecastSource, setForecastSource] = useState('api');
-  const [forceRefresh, setForceRefresh] = useState(false);
 
   // OPTIMIZATION: Use refs for data that doesn't trigger re-renders
   const livePricesRef = useRef({});
@@ -1946,16 +1941,17 @@ const CommodityDashboard = () => {
   const dataSourceRef = useRef({});
 
   // OPTIMIZATION: Debounced state setters
-  const debouncedSetLivePrices = useCallback(
-    debounce((data) => {
+  // OPTIMIZATION: Debounced state setters
+  const debouncedSetLivePrices = useMemo(
+    () => debounce((data) => {
       setLivePrices(data);
       livePricesRef.current = data;
     }, 300),
     []
   );
 
-  const debouncedSetDataSource = useCallback(
-    debounce((data) => {
+  const debouncedSetDataSource = useMemo(
+    () => debounce((data) => {
       setDataSource(data);
       dataSourceRef.current = data;
     }, 300),
@@ -2061,7 +2057,6 @@ const CommodityDashboard = () => {
   const handleGenerateForecast = useCallback(async (forceRefresh = false) => {
     setLoadingForecast(true);
     setForecastError('');
-    setForceRefresh(forceRefresh);
     
     try {
       const data = await memoizedFetchMLForecast(selectedCommodity, forecastMonths, forceRefresh);
@@ -2358,7 +2353,6 @@ const CommodityDashboard = () => {
           sourceObj[result.commodity] = result.dataSource;
         });
         
-        setCommodityData(dataObj);
         setMonthlyComparisonData(comparisonObj);
         debouncedSetDataSource(sourceObj);
         setApiStatus('connected');
@@ -2396,7 +2390,6 @@ const CommodityDashboard = () => {
             emptySource[commodity] = 'none';
           });
           
-          setCommodityData(emptyData);
           setMonthlyComparisonData(emptyComparison);
           debouncedSetDataSource(emptySource);
         }
@@ -2641,8 +2634,6 @@ const CommodityDashboard = () => {
     CHART_COMMODITIES.map(commodity => {
       const config = COMMODITY_CONFIG[commodity];
       const isSelected = selectedCommodity === commodity;
-      const comparisonData = monthlyComparisonData[commodity] || [];
-      const source = dataSource[commodity] || 'none';
       
       const commodityProfitLossMetrics = calculateProfitLossMetrics(commodity);
       const currentProfitLoss = commodityProfitLossMetrics?.currentProfitLoss;
@@ -2718,7 +2709,7 @@ const CommodityDashboard = () => {
         </button>
       );
     }),
-    [CHART_COMMODITIES, selectedCommodity, monthlyComparisonData, dataSource, priceAlerts, currencyMode, wheatDisplayUnit, calculateProfitLossMetrics]
+    [selectedCommodity, priceAlerts, currencyMode, wheatDisplayUnit, calculateProfitLossMetrics]
   );
 
   // OPTIMIZATION: Memoized Live Prices Table
@@ -2916,7 +2907,7 @@ const CommodityDashboard = () => {
         </table>
       </div>
     );
-  }, [loadingLivePrices, livePrices, priceAlerts, CHART_COMMODITIES]);
+  }, [loadingLivePrices, livePrices, priceAlerts]);
 
   // Early return for loading state
   if (loading) {
